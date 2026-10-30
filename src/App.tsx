@@ -16,6 +16,7 @@ import {
   updateBookmarkNote,
   importPagesIntoBook,
   resetLibraryToInitial,
+  initializePersistentStorage,
 } from './utils/storage';
 import { INITIAL_CATEGORIES } from './data/initialData';
 import { Header } from './components/Header';
@@ -67,10 +68,49 @@ export default function App() {
     setTimeout(() => setToastMessage(''), 3000);
   };
 
-  // Initial load
+  // Initial load: fast sync from memory/localStorage, then hydrate from IndexedDB & Server
   useEffect(() => {
+    // 1. Fast sync render
     const loaded = loadStoredBooks();
     setBooks(loaded);
+
+    // 2. Hydrate from IndexedDB (handles 100+ MB of book pages without quota error)
+    initializePersistentStorage((idbBooks) => {
+      if (idbBooks && idbBooks.length > 0) {
+        setBooks(idbBooks);
+      }
+    });
+
+    // 3. Try to sync catalog from backend SQLite server if available
+    fetch('/api/books?limit=100')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.books) && data.books.length > 0) {
+          setBooks((prevBooks) => {
+            const map = new Map<number, Book>();
+            // Server books
+            data.books.forEach((b: Book) => map.set(b.id, b));
+            // Local offline books (preserve user downloaded pages)
+            prevBooks.forEach((b) => {
+              const existing = map.get(b.id);
+              if (existing) {
+                map.set(b.id, {
+                  ...existing,
+                  is_downloaded: b.is_downloaded || existing.is_downloaded,
+                  pages: (b.pages && b.pages.length > 0) ? b.pages : existing.pages,
+                  toc: b.toc || existing.toc,
+                });
+              } else {
+                map.set(b.id, b);
+              }
+            });
+            const merged = Array.from(map.values());
+            saveStoredBooks(merged);
+            return merged;
+          });
+        }
+      })
+      .catch(() => {});
   }, []);
 
   // Update preferences helper
@@ -384,6 +424,7 @@ export default function App() {
       {activeBookForReader && (
         <ReaderModal
           book={activeBookForReader}
+          initialPage={readerInitialPage}
           onClose={() => {
             setActiveBookForReader(null);
             setReaderInitialPage(undefined);

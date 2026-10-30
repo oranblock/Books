@@ -388,3 +388,49 @@ export function exportBookAsJson(book: Book, pages: BookPage[]): string {
 
   return JSON.stringify(exportPayload, null, 2);
 }
+
+/**
+ * Escapes regex special characters.
+ */
+export function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Builds a diacritic-agnostic and safe Arabic RegExp for query highlighting.
+ * Handles variations in alef (ا, أ, إ, آ), teh marbuta (ة, ه), and allows arbitrary Tashkeel between letters.
+ */
+export function buildArabicFuzzyRegex(query: string): RegExp | null {
+  const cleanQ = query.trim();
+  if (!cleanQ) return null;
+
+  // Tashkeel / diacritics Unicode range to allow between any characters
+  const diacritics = '[\\u064B-\\u065F\\u0670\\u06D6-\\u06ED\\u0640]*';
+
+  // Normalize query characters
+  const chars = Array.from(cleanQ);
+  const regexParts = chars.map((char) => {
+    // If alef variant, match any alef form with optional diacritics
+    if (/[اإأآ]/.test(char)) {
+      return `[اإأآ]${diacritics}`;
+    }
+    // If teh marbuta / heh
+    if (/[ةه]/.test(char)) {
+      return `[ةه]${diacritics}`;
+    }
+    // If yeh / alef maqsura
+    if (/[يىئ]/.test(char)) {
+      return `[يىئ]${diacritics}`;
+    }
+    if (/\s+/.test(char)) {
+      return `\\s+`;
+    }
+    return `${escapeRegex(char)}${diacritics}`;
+  });
+
+  try {
+    return new RegExp(`(${regexParts.join('')})`, 'gi');
+  } catch {
+    return null;
+  }
+}

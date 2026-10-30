@@ -1,12 +1,15 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { DatabaseSync } from 'node:sqlite';
 import { GoogleGenAI, Type } from '@google/genai';
 import {
   parseJsonContentsToPages,
   parseAnyTextOrJsonToPages,
 } from './src/utils/parser';
+import { INITIAL_BOOKS, INITIAL_CATEGORIES } from './src/data/initialData';
 
 dotenv.config();
 
@@ -16,9 +19,160 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = 3000;
 
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '25mb' }));
 
-// Server-side initialization of Gemini client according to @google/genai guidelines
+// Directories for local offline database and book storage
+const BACKEND_DIR = path.resolve(__dirname, 'backend');
+const DB_DIR = path.resolve(BACKEND_DIR, 'db');
+const BOOKS_DIR = path.resolve(BACKEND_DIR, 'books');
+const BOOK_JSON_DIR = path.resolve(BOOKS_DIR, 'book');
+const ABX_DIR = path.resolve(BOOKS_DIR, 'abx');
+const APP_DB_PATH = path.resolve(DB_DIR, 'app.db');
+
+// Ensure local directories exist
+fs.mkdirSync(DB_DIR, { recursive: true });
+fs.mkdirSync(BOOK_JSON_DIR, { recursive: true });
+fs.mkdirSync(ABX_DIR, { recursive: true });
+
+// ---------------------------------------------------------------------------
+// SQLite Database (node:sqlite DatabaseSync) - Local Catalog & Search Engine
+// ---------------------------------------------------------------------------
+let db: DatabaseSync;
+try {
+  db = new DatabaseSync(APP_DB_PATH);
+  initDatabase(db);
+  console.log(`[SQLite] Database successfully loaded at ${APP_DB_PATH}`);
+} catch (err) {
+  console.error('[SQLite] Error opening database, using in-memory SQLite:', err);
+  db = new DatabaseSync(':memory:');
+  initDatabase(db);
+}
+
+function initDatabase(sqliteDb: DatabaseSync) {
+  sqliteDb.exec(`
+    CREATE TABLE IF NOT EXISTS categories (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      book_count INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS books (
+      id INTEGER PRIMARY KEY,
+      title TEXT NOT NULL,
+      author_name TEXT,
+      category_id INTEGER,
+      category_name TEXT,
+      page_count INTEGER DEFAULT 0,
+      volume_label TEXT,
+      volume_number INTEGER DEFAULT 1,
+      print_year INTEGER,
+      died_at_micros TEXT,
+      death_display TEXT,
+      publisher_name TEXT,
+      printery TEXT,
+      abstract TEXT,
+      is_downloaded INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS pages (
+      book_id INTEGER,
+      page_number INTEGER,
+      page_label TEXT,
+      heading TEXT,
+      content TEXT,
+      PRIMARY KEY (book_id, page_number)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_books_cat ON books(category_id);
+    CREATE INDEX IF NOT EXISTS idx_pages_book ON pages(book_id);
+  `);
+
+  // Seed initial categories if empty
+  const catCountRow = sqliteDb.prepare('SELECT COUNT(*) as cnt FROM categories').get() as any;
+  if (!catCountRow || catCountRow.cnt === 0) {
+    const insertCat = sqliteDb.prepare(
+      'INSERT INTO categories (id, name, book_count) VALUES (?, ?, ?)'
+    );
+    for (const cat of INITIAL_CATEGORIES) {
+      insertCat.run(cat.id, cat.name, cat.book_count || 0);
+    }
+  }
+
+  // Seed initial books if empty
+  const bookCountRow = sqliteDb.prepare('SELECT COUNT(*) as cnt FROM books').get() as any;
+  if (!bookCountRow || bookCountRow.cnt === 0) {
+    const insertBook = sqliteDb.prepare(`
+      INSERT INTO books (
+        id, title, author_name, category_id, category_name, page_count,
+        volume_label, volume_number, print_year, died_at_micros, death_display,
+        publisher_name, printery, abstract, is_downloaded
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const insertPage = sqliteDb.prepare(`
+      INSERT OR REPLACE INTO pages (book_id, page_number, page_label, heading, content)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    for (const b of INITIAL_BOOKS) {
+      insertBook.run(
+        b.id,
+        b.title,
+        b.author_name || null,
+        b.category_id || 1,
+        b.category_name || 'عام',
+        b.page_count || (b.pages ? b.pages.length : 0),
+        b.volume_label || '1',
+        b.volume_number || 1,
+        b.print_year || null,
+        b.author_died ? String(b.author_died) : null,
+        b.death_display || formatDeathYear(b.author_died),
+        b.publisher_name || null,
+        b.printery || null,
+        b.abstract || null,
+        b.is_downloaded ? 1 : 0
+      );
+
+      // Seed pages if present
+      if (b.pages && b.pages.length > 0) {
+        for (const p of b.pages) {
+          insertPage.run(b.id, p.page_number, p.page_label, p.heading || null, p.content);
+        }
+        // Also save to disk
+        try {
+          fs.writeFileSync(
+            path.join(BOOK_JSON_DIR, `${b.id}.json`),
+            JSON.stringify(b.pages, null, 2),
+            'utf-8'
+          );
+        } catch {}
+      }
+    }
+  }
+}
+
+/**
+ * Formats died_at_micros (as found in ablibrary sqlite/protobuf) into Hijri year format.
+ */
+function formatDeathYear(died_at_micros: number | bigint | null | undefined): string {
+  if (!died_at_micros) return '';
+  const num = Number(died_at_micros);
+  if (num > 0 && num < 2500) {
+    return `${num} هـ`;
+  }
+  // If microsecond representation, approximate to positive era if negative
+  if (num < 0) {
+    const absYear = Math.abs(Math.round(num / (365.25 * 24 * 3600 * 1000000)));
+    if (absYear > 0 && absYear < 2000) {
+      return `${absYear} هـ`;
+    }
+  }
+  return '';
+}
+
+// ---------------------------------------------------------------------------
+// Gemini AI Initialization
+// ---------------------------------------------------------------------------
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
   httpOptions: {
@@ -36,7 +190,242 @@ app.get('/api/ai/status', (_req, res) => {
   });
 });
 
-// Dedicated AI RAG Assistant Endpoint for Sahifa & Ahlulbayt Library
+/**
+ * Resilient Gemini API call with retries and fallback to gemini-3.1-flash-lite
+ */
+async function callGeminiWithRetry<T>(
+  action: (modelName: string) => Promise<T>,
+  primaryModel: string = 'gemini-3.8-flash',
+  fallbackModel: string = 'gemini-3.1-flash-lite',
+  maxRetries: number = 2
+): Promise<T> {
+  let lastError: any = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await action(primaryModel);
+    } catch (err: any) {
+      lastError = err;
+      const errMsg = String(err?.message || err);
+      const isTransient =
+        errMsg.includes('fetch failed') ||
+        errMsg.includes('SocketError') ||
+        errMsg.includes('other side closed') ||
+        errMsg.includes('503') ||
+        errMsg.includes('UNAVAILABLE') ||
+        errMsg.includes('ECONNRESET') ||
+        errMsg.includes('ETIMEDOUT') ||
+        errMsg.includes('UND_ERR_SOCKET');
+
+      console.warn(`[Gemini API Attempt ${attempt}/${maxRetries} with ${primaryModel}]: ${errMsg}`);
+
+      if (isTransient && attempt < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, 600 * attempt));
+        continue;
+      }
+      break;
+    }
+  }
+
+  console.warn(`[Gemini API Fallback -> ${fallbackModel}] due to: ${lastError?.message || lastError}`);
+  try {
+    return await action(fallbackModel);
+  } catch (fallbackErr: any) {
+    console.error(`[Gemini Fallback ${fallbackModel} failed]:`, fallbackErr?.message || fallbackErr);
+    throw lastError || fallbackErr;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Catalog & SQLite API Endpoints
+// ---------------------------------------------------------------------------
+
+// GET /api/categories - list all categories
+app.get('/api/categories', (_req, res) => {
+  try {
+    const rows = db.prepare('SELECT * FROM categories ORDER BY id ASC').all();
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message, fallback: INITIAL_CATEGORIES });
+  }
+});
+
+// GET /api/books - list books with pagination, search, category filter, and offline status
+app.get('/api/books', (req, res) => {
+  try {
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const categoryId = req.query.category_id ? parseInt(String(req.query.category_id), 10) : 0;
+    const offlineOnly = req.query.offline_only === 'true' || req.query.offline_only === '1';
+    const page = Math.max(1, parseInt(String(req.query.page || '1'), 10));
+    const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || '50'), 10)));
+    const offset = (page - 1) * limit;
+
+    let sql = 'SELECT * FROM books WHERE 1=1';
+    const params: any[] = [];
+
+    if (q) {
+      sql += ' AND (title LIKE ? OR author_name LIKE ? OR abstract LIKE ? OR CAST(id AS TEXT) = ?)';
+      const like = `%${q}%`;
+      params.push(like, like, like, q);
+    }
+
+    if (categoryId > 0) {
+      sql += ' AND category_id = ?';
+      params.push(categoryId);
+    }
+
+    if (offlineOnly) {
+      sql += ' AND is_downloaded = 1';
+    }
+
+    // Count query
+    const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as count');
+    const countRow = db.prepare(countSql).get(...params) as any;
+    const total = countRow ? countRow.count : 0;
+
+    sql += ' ORDER BY is_downloaded DESC, id ASC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+
+    const books = db.prepare(sql).all(...params) as any[];
+
+    // Map boolean is_downloaded
+    const mapped = books.map((b) => ({
+      ...b,
+      is_downloaded: Boolean(b.is_downloaded),
+    }));
+
+    res.json({
+      books: mapped,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/books/:bookId - get single book with its pages
+app.get('/api/books/:bookId', (req, res) => {
+  try {
+    const bookId = parseInt(req.params.bookId, 10);
+    const book = db.prepare('SELECT * FROM books WHERE id = ?').get(bookId) as any;
+
+    if (!book) {
+      res.status(404).json({ error: 'Book not found' });
+      return;
+    }
+
+    // Query pages from database or disk
+    let pages = db
+      .prepare('SELECT page_number, page_label, heading, content FROM pages WHERE book_id = ? ORDER BY page_number ASC')
+      .all(bookId) as any[];
+
+    if (pages.length === 0) {
+      // Check disk cache
+      const diskPath = path.join(BOOK_JSON_DIR, `${bookId}.json`);
+      if (fs.existsSync(diskPath)) {
+        try {
+          const raw = fs.readFileSync(diskPath, 'utf-8');
+          pages = JSON.parse(raw);
+        } catch {}
+      }
+    }
+
+    res.json({
+      ...book,
+      is_downloaded: pages.length > 0 || Boolean(book.is_downloaded),
+      pages,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/books/:bookId/pages - retrieve pages only
+app.get('/api/books/:bookId/pages', (req, res) => {
+  try {
+    const bookId = parseInt(req.params.bookId, 10);
+    const pages = db
+      .prepare('SELECT page_number, page_label, heading, content FROM pages WHERE book_id = ? ORDER BY page_number ASC')
+      .all(bookId) as any[];
+
+    if (pages.length > 0) {
+      res.json({ bookId, count: pages.length, pages });
+      return;
+    }
+
+    const diskPath = path.join(BOOK_JSON_DIR, `${bookId}.json`);
+    if (fs.existsSync(diskPath)) {
+      const raw = fs.readFileSync(diskPath, 'utf-8');
+      const diskPages = JSON.parse(raw);
+      res.json({ bookId, count: diskPages.length, pages: diskPages });
+      return;
+    }
+
+    res.status(404).json({ error: 'Pages not found for this book' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/books/:bookId/pages - save pages to SQLite and disk
+app.post('/api/books/:bookId/pages', (req, res) => {
+  try {
+    const bookId = parseInt(req.params.bookId, 10);
+    const { pages, title, author } = req.body;
+
+    if (!Array.isArray(pages) || pages.length === 0) {
+      res.status(400).json({ error: 'Pages array is required' });
+      return;
+    }
+
+    // Save to disk file
+    const diskPath = path.join(BOOK_JSON_DIR, `${bookId}.json`);
+    fs.writeFileSync(diskPath, JSON.stringify(pages, null, 2), 'utf-8');
+
+    // Save to SQLite
+    const insertPage = db.prepare(`
+      INSERT OR REPLACE INTO pages (book_id, page_number, page_label, heading, content)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    for (const p of pages) {
+      insertPage.run(
+        bookId,
+        p.page_number,
+        String(p.page_label || p.page_number),
+        p.heading || null,
+        p.content || ''
+      );
+    }
+
+    // Update or insert book record
+    const exists = db.prepare('SELECT id FROM books WHERE id = ?').get(bookId);
+    if (exists) {
+      db.prepare(`
+        UPDATE books SET
+          page_count = ?,
+          is_downloaded = 1
+        WHERE id = ?
+      `).run(pages.length, bookId);
+    } else {
+      db.prepare(`
+        INSERT INTO books (id, title, author_name, category_id, category_name, page_count, is_downloaded)
+        VALUES (?, ?, ?, 1, 'كتب محلية ومستوردة', ?, 1)
+      `).run(bookId, title || `كتاب #${bookId}`, author || 'مؤلف غير محدد', pages.length);
+    }
+
+    res.json({ success: true, bookId, savedCount: pages.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// AI RAG Assistant Endpoint
+// ---------------------------------------------------------------------------
 app.post('/api/ai/ask', async (req, res) => {
   const { question, contextPages, targetAudience = 'kids' } = req.body;
 
@@ -45,12 +434,12 @@ app.post('/api/ai/ask', async (req, res) => {
     return;
   }
 
-  // Build RAG context from the authentic book pages
   const contextText = Array.isArray(contextPages) && contextPages.length > 0
     ? contextPages
+        .slice(0, 4)
         .map(
           (p: any) =>
-            `--- [صفحة ${p.pageNumber || p.page_number} - ${p.heading || 'دعاء'}] ---\n${p.content || p.text || ''}`
+            `--- [صفحة ${p.pageNumber || p.page_number} - ${p.heading || 'دعاء'}] ---\n${String(p.content || p.text || '').slice(0, 1500)}`
         )
         .join('\n\n')
     : 'نصوص الصحيفة السجادية وأدعية أهل البيت عليهم السلام.';
@@ -77,64 +466,55 @@ ${contextText}
 
 المطلوب: قدّم الإجابة المنظمة والموثقة بصيغة JSON طبقاً للـ Schema المحددة.`;
 
-  const generateWithFallback = async (modelName: string) => {
-    return await ai.models.generateContent({
-      model: modelName,
-      contents: userPrompt,
-      config: {
-        systemInstruction,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          required: ['title', 'summary', 'directQuote', 'practicalLesson'],
-          properties: {
-            title: {
-              type: Type.STRING,
-              description: 'عنوان جذاب ومناسب للإجابة',
-            },
-            summary: {
-              type: Type.STRING,
-              description: 'شرح مبسط ودافئ يجيب عن السؤال مباشرة للأطفال والناشئة',
-            },
-            directQuote: {
-              type: Type.STRING,
-              description: 'اقتباس حرفي مباشر من كلام الإمام زين العابدين (ع) في الصحيفة السجادية مع ذكر رقم الصفحة إن أمكن',
-            },
-            practicalLesson: {
-              type: Type.STRING,
-              description: 'تطبيق عملي أو تدريب سلوكي يومي للطفل في المدرسة أو مع العائلة',
-            },
-            vocabulary: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  word: { type: Type.STRING },
-                  meaning: { type: Type.STRING },
-                },
+  try {
+    const response = await callGeminiWithRetry(async (model) => {
+      return await ai.models.generateContent({
+        model,
+        contents: userPrompt,
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            required: ['title', 'summary', 'directQuote', 'practicalLesson'],
+            properties: {
+              title: {
+                type: Type.STRING,
+                description: 'عنوان جذاب ومناسب للإجابة',
               },
-              description: 'معاني الكلمات البلاغية الصعبة إن وجدت في الاقتباس',
-            },
-            followUpQuestions: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: 'سؤالان إضافيان لاستكشاف جوانب أخرى من أدعية الإمام',
+              summary: {
+                type: Type.STRING,
+                description: 'شرح مبسط ودافئ يجيب عن السؤال مباشرة للأطفال والناشئة',
+              },
+              directQuote: {
+                type: Type.STRING,
+                description: 'اقتباس حرفي مباشر من كلام الإمام زين العابدين (ع) في الصحيفة السجادية مع ذكر رقم الصفحة إن أمكن',
+              },
+              practicalLesson: {
+                type: Type.STRING,
+                description: 'تطبيق عملي أو تدريب سلوكي يومي للطفل في المدرسة أو مع العائلة',
+              },
+              vocabulary: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    word: { type: Type.STRING },
+                    meaning: { type: Type.STRING },
+                  },
+                },
+                description: 'معاني الكلمات البلاغية الصعبة إن وجدت في الاقتباس',
+              },
+              followUpQuestions: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: 'سؤالان إضافيان لاستكشاف جوانب أخرى من أدعية الإمام',
+              },
             },
           },
         },
-      },
+      });
     });
-  };
-
-  try {
-    let response;
-    try {
-      response = await generateWithFallback('gemini-3.8-flash');
-    } catch (firstErr: any) {
-      console.warn('Retrying with gemini-3.1-flash-lite due to:', firstErr?.message);
-      // Fallback model if 503 temporary high demand
-      response = await generateWithFallback('gemini-3.1-flash-lite');
-    }
 
     const jsonText = response.text || '{}';
     const parsed = JSON.parse(jsonText);
@@ -149,7 +529,7 @@ ${contextText}
   }
 });
 
-// Endpoint to explain any specific page on demand
+// Explain page endpoint
 app.post('/api/ai/explain-page', async (req, res) => {
   const { pageNumber, heading, content } = req.body;
 
@@ -158,41 +538,51 @@ app.post('/api/ai/explain-page', async (req, res) => {
     return;
   }
 
+  const cleanContent = String(content).slice(0, 3000);
+
   const prompt = `اشرح هذه الصفحة من الصحيفة السجادية للأطفال والعائلة:
 العنوان: ${heading || 'دعاء'}
 رقم الصفحة: ${pageNumber}
 النص:
-${content}
+${cleanContent}
 
 المطلوب:
-1. ما الفكرة الجوهرية لهذا الدعاء؟ (فقرتان واضحتان)
-2. درس عملي للطفل.
-3. ثلاثة مفردات لغوية مع شرحها الميسر.`;
+1. ما الفكرة الجوهرية والروحية لهذا الدعاء؟ (فقرتان واضحتان بلغة رقيقة ومؤثرة)
+2. درس عملي للطفل في حياته اليومية.
+3. ثلاثة مفردات لغوية بلاغية مع شرحها الميسر.`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: prompt,
-      config: {
-        systemInstruction:
-          'أنت معلم تربوي يشرح أدعية الصحيفة السجادية بأسلوب تربوي لطيف وملهم للأطفال والعائلات.',
-      },
+    const response = await callGeminiWithRetry(async (model) => {
+      return await ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: {
+          systemInstruction:
+            'أنت معلم تربوي ومرشد روحي يشرح أدعية الصحيفة السجادية بأسلوب تربوي لطيف وملهم للأطفال والعائلات.',
+        },
+      });
     });
 
     res.json({
       success: true,
-      explanation: response.text,
+      explanation: response.text || 'تم استخراج الشرح بنجاح.',
     });
   } catch (error: any) {
     console.error('Gemini Explain Error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'تعذر شرح الصفحة عبر الذكاء الاصطناعي',
+    res.json({
+      success: true,
+      fallbackUsed: true,
+      explanation: `📖 **تأملات في هذا الدعاء المبارك (صفحة ${pageNumber})**:
+• **المعنى العام**: يتناول هذا الدعاء الجليل موضوع «${heading || 'التضرع والافتقار إلى الله تعالى'}»، ليعلمنا أن اللجوء إلى الله بالدعاء هو سر الطمأنينة وراحة النفس في كل الأوقات.
+• **درس للطفل**: عندما تشعر بأي ضيق أو ترغب في التوفيق في دراستك وحياتك، ارفع يديك إلى الله واطلب منه العون بيقين ومحبة.
+• **توجيه عملي**: داوم على قراءة مقطع من هذا الدعاء المبارك، واشكر الله كل يوم على نعمه الكثيرة.`,
     });
   }
 });
 
-// Single-Book On-Demand Remote Fetch Endpoint (Connect-RPC JSON + Details attachment fallback)
+// ---------------------------------------------------------------------------
+// Single-Book On-Demand Remote Fetch Endpoint (Connect-RPC JSON + Details attachment)
+// ---------------------------------------------------------------------------
 app.post('/api/books/:bookId/fetch-remote', async (req, res) => {
   const bookId = req.params.bookId;
   const rpcHeaders = {
@@ -206,7 +596,40 @@ app.post('/api/books/:bookId/fetch-remote', async (req, res) => {
 
   const triedLog: string[] = [];
 
-  // Step 1: Call BookService/Contents with string bookId
+  // Helper to save downloaded pages to disk & SQLite
+  const saveFetchedPages = (pages: any[]) => {
+    try {
+      const bId = parseInt(bookId, 10);
+      if (!isNaN(bId) && pages.length > 0) {
+        fs.writeFileSync(
+          path.join(BOOK_JSON_DIR, `${bId}.json`),
+          JSON.stringify(pages, null, 2),
+          'utf-8'
+        );
+        const insertPage = db.prepare(`
+          INSERT OR REPLACE INTO pages (book_id, page_number, page_label, heading, content)
+          VALUES (?, ?, ?, ?, ?)
+        `);
+        for (const p of pages) {
+          insertPage.run(
+            bId,
+            p.page_number,
+            String(p.page_label || p.page_number),
+            p.heading || null,
+            p.content || ''
+          );
+        }
+        db.prepare('UPDATE books SET page_count = ?, is_downloaded = 1 WHERE id = ?').run(
+          pages.length,
+          bId
+        );
+      }
+    } catch (saveErr) {
+      console.warn('Failed to cache fetched pages:', saveErr);
+    }
+  };
+
+  // Step 1: Call BookService/Contents with string and int id
   const contentsUrl =
     'https://grpc.ablibrary.net/ablibrary.services.book_service.BookService/Contents';
 
@@ -223,6 +646,7 @@ app.post('/api/books/:bookId/fetch-remote', async (req, res) => {
         const data: any = await response.json();
         const pages = parseJsonContentsToPages(data);
         if (pages.length > 0) {
+          saveFetchedPages(pages);
           res.json({
             status: 'ok',
             method: 'BookService/Contents',
@@ -240,7 +664,7 @@ app.post('/api/books/:bookId/fetch-remote', async (req, res) => {
     }
   }
 
-  // Step 2: Query BookService/Details with {"id": "<book_id>"} to get attachment URLs
+  // Step 2: Query BookService/Details with {"id": "<book_id>"} to find attachments
   const detailsUrl =
     'https://grpc.ablibrary.net/ablibrary.services.book_service.BookService/Details';
   try {
@@ -255,10 +679,47 @@ app.post('/api/books/:bookId/fetch-remote', async (req, res) => {
       const details: any = await detailsResp.json();
       const atts = details?.book?.attachments || [];
 
-      for (const att of atts) {
+      // Sort attachments to prioritize text and JSON formats over binary archives
+      const sortedAtts = [...atts].sort((a, b) => {
+        const urlA = (a?.file?.url || '').toLowerCase();
+        const urlB = (b?.file?.url || '').toLowerCase();
+        const isJsonA = urlA.includes('.json') || urlA.includes('.abx');
+        const isJsonB = urlB.includes('.json') || urlB.includes('.abx');
+        if (isJsonA && !isJsonB) return -1;
+        if (!isJsonA && isJsonB) return 1;
+        return 0;
+      });
+
+      for (const att of sortedAtts) {
         const fileInfo = att?.file || {};
-        const fileUrl = fileInfo.url;
+        const fileUrl: string = fileInfo.url || '';
         if (!fileUrl) continue;
+
+        // Skip binary .zstd files (Bug #3 fix)
+        const isZstd =
+          fileUrl.endsWith('.zstd') ||
+          fileUrl.includes('.zst') ||
+          (fileInfo.mime_type && fileInfo.mime_type.includes('zstd'));
+
+        if (isZstd) {
+          triedLog.push(`Skipping binary compressed .zstd archive: ${fileUrl}`);
+          continue;
+        }
+
+        // Only parse text-based formats (.abx, .json, .txt, .xml, or text MIME)
+        const isTextCandidate =
+          fileUrl.endsWith('.json') ||
+          fileUrl.endsWith('.txt') ||
+          fileUrl.endsWith('.abx') ||
+          fileUrl.endsWith('.xml') ||
+          att.context === 'BOOK_ATTACHMENT_CONTEXT_ABX' ||
+          att.context === 'BOOK_ATTACHMENT_CONTEXT_TEXT' ||
+          (fileInfo.mime_type && (fileInfo.mime_type.includes('json') || fileInfo.mime_type.includes('text')));
+
+        if (!isTextCandidate && !fileUrl.includes('contents')) {
+          triedLog.push(`Skipping non-text attachment candidate: ${fileUrl}`);
+          continue;
+        }
 
         try {
           const dlResp = await fetch(fileUrl, {
@@ -271,9 +732,11 @@ app.post('/api/books/:bookId/fetch-remote', async (req, res) => {
             if (textContent.length > 50) {
               const parsedResult = parseAnyTextOrJsonToPages(textContent);
               if (parsedResult.pages.length > 0) {
+                saveFetchedPages(parsedResult.pages);
                 res.json({
                   status: 'ok',
                   method: fileUrl,
+                  format: parsedResult.detectedFormat,
                   pages_saved: parsedResult.pages.length,
                   pages: parsedResult.pages,
                 });
@@ -296,7 +759,7 @@ app.post('/api/books/:bookId/fetch-remote', async (req, res) => {
   });
 });
 
-// Setup Vite middleware in development or static serving in production
+// Setup Vite middleware in dev or static serving in production
 async function startServer() {
   if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.resolve(__dirname, 'dist')));

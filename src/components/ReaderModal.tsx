@@ -33,6 +33,7 @@ import {
   exportBookAsTxt,
   exportBookAsJson,
   stripTashkeel,
+  buildArabicFuzzyRegex,
 } from '../utils/parser';
 
 interface ReaderModalProps {
@@ -43,6 +44,7 @@ interface ReaderModalProps {
   bookmarks: PageBookmark[];
   onToggleBookmark: (bookmark: PageBookmark) => void;
   onUpdateBookmarkNote: (bookId: number, pageNumber: number, note: string) => void;
+  initialPage?: number;
 }
 
 export const ReaderModal: React.FC<ReaderModalProps> = ({
@@ -53,6 +55,7 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
   bookmarks,
   onToggleBookmark,
   onUpdateBookmarkNote,
+  initialPage,
 }) => {
   const pages: BookPage[] = book.pages || [];
   const [activePageIndex, setActivePageIndex] = useState<number>(0);
@@ -107,6 +110,16 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
       setShowToc(false);
     }
   };
+
+  // Jump to initial page if provided (e.g. from Search or Bookmarks)
+  useEffect(() => {
+    if (initialPage && initialPage >= 1) {
+      const timer = setTimeout(() => {
+        jumpToPage(initialPage);
+      }, 120);
+      return () => clearTimeout(timer);
+    }
+  }, [initialPage, pages]);
 
   const handleCopyPage = (p: BookPage) => {
     const textToCopy = `${p.heading ? p.heading + '\n\n' : ''}${p.content}\n\n[${book.title} - ص ${p.page_label}]`;
@@ -263,26 +276,44 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
       ? "font-['Noto_Naskh_Arabic']"
       : 'font-sans';
 
-  // Highlight search matches
+  // Highlight search matches safely with diacritic-agnostic Arabic regex
   const renderContentWithHighlights = (content: string) => {
-    let displayText = preferences.removeTashkeel ? stripTashkeel(content) : content;
-
-    if (!searchQuery.trim()) {
+    const displayText = preferences.removeTashkeel ? stripTashkeel(content) : content;
+    const cleanQ = searchQuery.trim();
+    if (!cleanQ) {
       return displayText;
     }
 
-    const query = searchQuery.trim();
-    // Split for highlighting
-    const parts = displayText.split(new RegExp(`(${query})`, 'gi'));
-    return parts.map((part, i) =>
-      part.toLowerCase() === query.toLowerCase() ? (
-        <mark key={i} className="bg-amber-400 text-black px-1 rounded">
-          {part}
+    const regex = buildArabicFuzzyRegex(cleanQ);
+    if (!regex) {
+      return displayText;
+    }
+
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    regex.lastIndex = 0;
+    while ((match = regex.exec(displayText)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(displayText.substring(lastIndex, match.index));
+      }
+      parts.push(
+        <mark key={match.index} className="bg-amber-400 text-black px-1 rounded font-medium">
+          {match[0]}
         </mark>
-      ) : (
-        part
-      )
-    );
+      );
+      lastIndex = match.index + match[0].length;
+      if (match[0].length === 0) {
+        regex.lastIndex++;
+      }
+    }
+
+    if (lastIndex < displayText.length) {
+      parts.push(displayText.substring(lastIndex));
+    }
+
+    return parts.length > 0 ? parts : displayText;
   };
 
   return (
