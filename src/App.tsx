@@ -19,6 +19,7 @@ import {
   initializePersistentStorage,
 } from './utils/storage';
 import { INITIAL_CATEGORIES } from './data/initialData';
+import { stripTashkeel } from './utils/parser';
 import { Header } from './components/Header';
 import { BookCard } from './components/BookCard';
 import { ReaderModal } from './components/ReaderModal';
@@ -102,7 +103,9 @@ export default function App() {
                   toc: existing?.toc || b.toc,
                 });
               });
-              return Array.from(map.values());
+              const merged = Array.from(map.values());
+              saveStoredBooks(merged);
+              return merged;
             });
           }
         })
@@ -125,38 +128,38 @@ export default function App() {
     }).then(({ bookmarks: idbBm, preferences: idbPrefs }) => {
       if (idbBm && idbBm.length > 0) setBookmarks(idbBm);
       if (idbPrefs) setPreferences(idbPrefs);
-    });
 
-    // 3. Try to sync catalog from backend SQLite server if available
-    fetch('/api/books?limit=100')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data && Array.isArray(data.books) && data.books.length > 0) {
-          setBooks((prevBooks) => {
-            const map = new Map<number, Book>();
-            // Server books
-            data.books.forEach((b: Book) => map.set(b.id, b));
-            // Local offline books (preserve user downloaded pages)
-            prevBooks.forEach((b) => {
-              const existing = map.get(b.id);
-              if (existing) {
-                map.set(b.id, {
-                  ...existing,
-                  is_downloaded: b.is_downloaded || existing.is_downloaded,
-                  pages: (b.pages && b.pages.length > 0) ? b.pages : existing.pages,
-                  toc: b.toc || existing.toc,
-                });
-              } else {
-                map.set(b.id, b);
-              }
+      // 3. Sync catalog from backend SQLite server if available (sequenced after IndexedDB is ready)
+      fetch('/api/books?limit=100')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data && Array.isArray(data.books) && data.books.length > 0) {
+            setBooks((prevBooks) => {
+              const map = new Map<number, Book>();
+              // Server books
+              data.books.forEach((b: Book) => map.set(b.id, b));
+              // Local offline books (preserve user downloaded pages)
+              prevBooks.forEach((b) => {
+                const existing = map.get(b.id);
+                if (existing) {
+                  map.set(b.id, {
+                    ...existing,
+                    is_downloaded: b.is_downloaded || existing.is_downloaded,
+                    pages: (b.pages && b.pages.length > 0) ? b.pages : existing.pages,
+                    toc: b.toc || existing.toc,
+                  });
+                } else {
+                  map.set(b.id, b);
+                }
+              });
+              const merged = Array.from(map.values());
+              saveStoredBooks(merged);
+              return merged;
             });
-            const merged = Array.from(map.values());
-            saveStoredBooks(merged);
-            return merged;
-          });
-        }
-      })
-      .catch(() => {});
+          }
+        })
+        .catch(() => {});
+    });
   }, []);
 
   // Update preferences helper
@@ -264,13 +267,14 @@ export default function App() {
         return false;
       }
 
-      // Query filter
+      // Query filter with Arabic normalization (alef, teh marbuta, tashkeel)
       if (searchQuery.trim()) {
-        const q = searchQuery.trim().toLowerCase();
-        const inTitle = (b.title || '').toLowerCase().includes(q);
-        const inAuthor = (b.author_name || '').toLowerCase().includes(q);
-        const inAbstract = (b.abstract || '').toLowerCase().includes(q);
-        const inId = String(b.id) === q;
+        const rawQ = searchQuery.trim().toLowerCase();
+        const normQ = stripTashkeel(rawQ);
+        const inTitle = stripTashkeel(b.title || '').toLowerCase().includes(normQ);
+        const inAuthor = stripTashkeel(b.author_name || '').toLowerCase().includes(normQ);
+        const inAbstract = stripTashkeel(b.abstract || '').toLowerCase().includes(normQ);
+        const inId = String(b.id) === rawQ;
         if (!inTitle && !inAuthor && !inAbstract && !inId) return false;
       }
 
@@ -486,7 +490,7 @@ export default function App() {
                       setShowImportModal(true);
                     }}
                     onBookDownloaded={(bookId, pages) => {
-                      handleImportSuccess(bookId, pages);
+                      handleImportSuccess(bookId, pages, book.title);
                     }}
                   />
                 ))}

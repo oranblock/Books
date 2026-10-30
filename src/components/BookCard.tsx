@@ -6,7 +6,7 @@ interface BookCardProps {
   book: Book;
   onOpenReader: (book: Book) => void;
   onOpenImportForBook: (book: Book) => void;
-  onBookDownloaded?: (bookId: number, pages: any[]) => void;
+  onBookDownloaded?: (bookId: number, pages: any[], title?: string) => void;
 }
 
 export const BookCard: React.FC<BookCardProps> = ({
@@ -32,7 +32,7 @@ export const BookCard: React.FC<BookCardProps> = ({
 
       if (data.status === 'ok' && Array.isArray(data.pages) && data.pages.length > 0) {
         if (onBookDownloaded) {
-          onBookDownloaded(book.id, data.pages);
+          onBookDownloaded(book.id, data.pages, book.title);
         }
       } else {
         setDownloadError('يتطلب استيراداً يدوياً');

@@ -56,7 +56,8 @@ export const ImportModal: React.FC<ImportModalProps> = ({
       const data = await res.json();
 
       if (data.status === 'ok' && Array.isArray(data.pages) && data.pages.length > 0) {
-        onImportSuccess(selectedBookId, data.pages);
+        const curBook = books.find((b) => b.id === selectedBookId);
+        onImportSuccess(selectedBookId, data.pages, isNewBook ? newBookTitle : curBook?.title);
       } else {
         setRemoteLogs(data.tried || ['تعذر العثور على محتوى الكتاب عن بعد']);
         setErrorMsg('تعذر الجلب التلقائي عن بعد، يمكنك رفع الملف يدوياً أدناه.');
