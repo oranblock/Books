@@ -266,13 +266,15 @@ app.get('/api/categories', (_req, res) => {
           SELECT 
             c.id,
             COALESCE(ct.name, 'قسم ' || c.id) AS name,
-            COALESCE(counts.cnt, 0) AS book_count
+            COUNT(bc.book_id) AS book_count
           FROM categories c
-          LEFT JOIN category_translations ct ON ct.category_id = c.id AND (ct.language_id = 1 OR ct.language_id = '1')
-          LEFT JOIN (
-            SELECT category_id, COUNT(*) AS cnt FROM book_categories GROUP BY category_id
-          ) counts ON counts.category_id = c.id
-          ORDER BY c.id ASC
+          LEFT JOIN category_translations ct 
+            ON ct.category_id = c.id AND ct.language_id IN ('ar', '1')
+          LEFT JOIN book_categories bc 
+            ON bc.category_id = c.id
+          WHERE c.deleted_at IS NULL
+          GROUP BY c.id
+          ORDER BY c.weight ASC, book_count DESC
         `)
         .all();
       res.json(rows);
@@ -292,11 +294,11 @@ app.get('/api/books', (req, res) => {
     const categoryId = req.query.category_id ? parseInt(String(req.query.category_id), 10) : 0;
     const offlineOnly = req.query.offline_only === 'true' || req.query.offline_only === '1';
     const page = Math.max(1, parseInt(String(req.query.page || '1'), 10));
-    const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || '50'), 10)));
+    const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit || '50'), 10)));
     const offset = (page - 1) * limit;
 
     if (isNormalizedDb) {
-      let whereClause = ' WHERE 1=1';
+      let whereClause = ' WHERE b.deleted_at IS NULL';
       const params: any[] = [];
 
       if (q) {
@@ -306,7 +308,7 @@ app.get('/api/books', (req, res) => {
       }
 
       if (categoryId > 0) {
-        whereClause += ' AND bc.category_id = ?';
+        whereClause += ' AND EXISTS (SELECT 1 FROM book_categories bc_f WHERE bc_f.book_id = b.id AND bc_f.category_id = ?)';
         params.push(categoryId);
       }
 
@@ -314,24 +316,22 @@ app.get('/api/books', (req, res) => {
         whereClause += ' AND (EXISTS (SELECT 1 FROM pages p WHERE p.book_id = b.id) OR EXISTS (SELECT 1 FROM local_pages lp WHERE lp.book_id = b.id))';
       }
 
-      // Count query
       const countSql = `
         SELECT COUNT(DISTINCT b.id) AS count
         FROM books b
-        LEFT JOIN book_translations bt ON bt.book_id = b.id AND (bt.language_id = 1 OR bt.language_id = '1')
+        LEFT JOIN book_translations bt ON bt.book_id = b.id AND bt.language_id IN ('ar', '1')
         LEFT JOIN (
           SELECT bcon.book_id, ct.name AS author_name
           FROM book_contributors bcon
-          JOIN contributor_translations ct ON ct.contributor_id = bcon.contributor_id AND (ct.language_id = 1 OR ct.language_id = '1')
+          JOIN contributor_translations ct ON ct.contributor_id = bcon.contributor_id AND ct.language_id IN ('ar', '1')
+          WHERE bcon.deleted_at IS NULL
           GROUP BY bcon.book_id
         ) auth ON auth.book_id = b.id
-        LEFT JOIN book_categories bc ON bc.book_id = b.id
         ${whereClause}
       `;
       const countRow = db.prepare(countSql).get(...params) as any;
       const total = countRow ? countRow.count : 0;
 
-      // Select items
       const selectSql = `
         SELECT 
           b.id,
@@ -339,39 +339,46 @@ app.get('/api/books', (req, res) => {
           COALESCE(auth.author_name, '') AS author_name,
           auth.author_era,
           auth.author_died,
-          bc.category_id,
-          COALESCE(catt.name, 'عام') AS category_name,
+          (SELECT bc_cat.category_id FROM book_categories bc_cat WHERE bc_cat.book_id = b.id LIMIT 1) AS category_id,
+          (
+            SELECT catt.name 
+            FROM book_categories bc_cat 
+            JOIN category_translations catt ON catt.category_id = bc_cat.category_id AND catt.language_id IN ('ar', '1')
+            WHERE bc_cat.book_id = b.id 
+            LIMIT 1
+          ) AS category_name,
           COALESCE(b.page_count, 0) AS page_count,
-          b.volume_label,
+          bt.volume_label,
           b.volume_number,
           b.print_year,
           bt.abstract,
+          bt.printery,
           CASE 
             WHEN EXISTS (SELECT 1 FROM pages p WHERE p.book_id = b.id) THEN 1
             WHEN EXISTS (SELECT 1 FROM local_pages lp WHERE lp.book_id = b.id) THEN 1
             ELSE 0 
           END AS is_downloaded
         FROM books b
-        LEFT JOIN book_translations bt ON bt.book_id = b.id AND (bt.language_id = 1 OR bt.language_id = '1')
+        LEFT JOIN book_translations bt ON bt.book_id = b.id AND bt.language_id IN ('ar', '1')
         LEFT JOIN (
           SELECT 
             bcon.book_id, 
             ct.name AS author_name,
             ct.era AS author_era,
-            ct.died_at AS author_died
+            c.died_at AS author_died
           FROM book_contributors bcon
-          JOIN contributor_translations ct ON ct.contributor_id = bcon.contributor_id AND (ct.language_id = 1 OR ct.language_id = '1')
+          JOIN contributors c ON c.id = bcon.contributor_id
+          LEFT JOIN contributor_translations ct ON ct.contributor_id = c.id AND ct.language_id IN ('ar', '1')
+          WHERE bcon.deleted_at IS NULL
           GROUP BY bcon.book_id
         ) auth ON auth.book_id = b.id
-        LEFT JOIN book_categories bc ON bc.book_id = b.id
-        LEFT JOIN category_translations catt ON catt.category_id = bc.category_id AND (catt.language_id = 1 OR catt.language_id = '1')
         ${whereClause}
-        ORDER BY is_downloaded DESC, b.id ASC
+        GROUP BY b.id
+        ORDER BY is_downloaded DESC, COALESCE(auth.author_died, 999999999999999999) ASC, b.id ASC
         LIMIT ? OFFSET ?
       `;
 
-      params.push(limit, offset);
-      const rows = db.prepare(selectSql).all(...params) as any[];
+      const rows = db.prepare(selectSql).all(...params, limit, offset) as any[];
 
       const mapped = rows.map((b) => ({
         ...b,
@@ -451,27 +458,34 @@ app.get('/api/books/:bookId', (req, res) => {
           COALESCE(auth.author_name, '') AS author_name,
           auth.author_era,
           auth.author_died,
-          bc.category_id,
-          COALESCE(catt.name, 'عام') AS category_name,
+          (SELECT bc_cat.category_id FROM book_categories bc_cat WHERE bc_cat.book_id = b.id LIMIT 1) AS category_id,
+          (
+            SELECT catt.name 
+            FROM book_categories bc_cat 
+            JOIN category_translations catt ON catt.category_id = bc_cat.category_id AND catt.language_id IN ('ar', '1')
+            WHERE bc_cat.book_id = b.id 
+            LIMIT 1
+          ) AS category_name,
           COALESCE(b.page_count, 0) AS page_count,
-          b.volume_label,
+          bt.volume_label,
           b.volume_number,
           b.print_year,
-          bt.abstract
+          bt.abstract,
+          bt.printery
         FROM books b
-        LEFT JOIN book_translations bt ON bt.book_id = b.id AND (bt.language_id = 1 OR bt.language_id = '1')
+        LEFT JOIN book_translations bt ON bt.book_id = b.id AND bt.language_id IN ('ar', '1')
         LEFT JOIN (
           SELECT 
             bcon.book_id, 
             ct.name AS author_name,
             ct.era AS author_era,
-            ct.died_at AS author_died
+            c.died_at AS author_died
           FROM book_contributors bcon
-          JOIN contributor_translations ct ON ct.contributor_id = bcon.contributor_id AND (ct.language_id = 1 OR ct.language_id = '1')
+          JOIN contributors c ON c.id = bcon.contributor_id
+          LEFT JOIN contributor_translations ct ON ct.contributor_id = c.id AND ct.language_id IN ('ar', '1')
+          WHERE bcon.deleted_at IS NULL
           GROUP BY bcon.book_id
         ) auth ON auth.book_id = b.id
-        LEFT JOIN book_categories bc ON bc.book_id = b.id
-        LEFT JOIN category_translations catt ON catt.category_id = bc.category_id AND (catt.language_id = 1 OR catt.language_id = '1')
         WHERE b.id = ?
       `;
       book = db.prepare(selectSql).get(bookId) as any;

@@ -68,6 +68,49 @@ export default function App() {
     setTimeout(() => setToastMessage(''), 3000);
   };
 
+  const [serverCategories, setServerCategories] = useState<Category[]>([]);
+
+  // Fetch real categories from server on mount
+  useEffect(() => {
+    fetch('/api/categories')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((cats) => {
+        if (Array.isArray(cats) && cats.length > 0) {
+          setServerCategories(cats);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Query backend SQLite whenever searchQuery or selectedCategory changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const url = `/api/books?q=${encodeURIComponent(searchQuery)}&category_id=${selectedCategory}&limit=100`;
+      fetch(url)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data && Array.isArray(data.books)) {
+            setBooks((prevBooks) => {
+              const map = new Map<number, Book>();
+              prevBooks.forEach((b) => map.set(b.id, b));
+              data.books.forEach((b: Book) => {
+                const existing = map.get(b.id);
+                map.set(b.id, {
+                  ...b,
+                  is_downloaded: b.is_downloaded || Boolean(existing?.is_downloaded),
+                  pages: existing?.pages && existing.pages.length > 0 ? existing.pages : b.pages,
+                  toc: existing?.toc || b.toc,
+                });
+              });
+              return Array.from(map.values());
+            });
+          }
+        })
+        .catch(() => {});
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery, selectedCategory]);
+
   // Initial load: fast sync from memory/localStorage, then hydrate from IndexedDB & Server
   useEffect(() => {
     // 1. Fast sync render
@@ -196,14 +239,12 @@ export default function App() {
 
   // Categories with computed book count
   const categories = useMemo(() => {
+    if (serverCategories.length > 0) return serverCategories;
     return INITIAL_CATEGORIES.map((cat) => {
       const count = books.filter((b) => b.category_id === cat.id).length;
-      return {
-        ...cat,
-        book_count: cat.book_count + count,
-      };
+      return { ...cat, book_count: cat.book_count + count };
     });
-  }, [books]);
+  }, [books, serverCategories]);
 
   // Offline count
   const offlineCount = useMemo(() => {
