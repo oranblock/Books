@@ -8,6 +8,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import {
   parseJsonContentsToPages,
   parseAnyTextOrJsonToPages,
+  formatDeathYear,
 } from './src/utils/parser';
 import { INITIAL_BOOKS, INITIAL_CATEGORIES } from './src/data/initialData';
 
@@ -38,10 +39,12 @@ fs.mkdirSync(ABX_DIR, { recursive: true });
 // SQLite Database (node:sqlite DatabaseSync) - Local Catalog & Search Engine
 // ---------------------------------------------------------------------------
 let db: DatabaseSync;
+let isNormalizedDb = false;
+
 try {
   db = new DatabaseSync(APP_DB_PATH);
   initDatabase(db);
-  console.log(`[SQLite] Database successfully loaded at ${APP_DB_PATH}`);
+  console.log(`[SQLite] Database successfully loaded at ${APP_DB_PATH} (normalized schema: ${isNormalizedDb})`);
 } catch (err) {
   console.error('[SQLite] Error opening database, using in-memory SQLite:', err);
   db = new DatabaseSync(':memory:');
@@ -49,6 +52,42 @@ try {
 }
 
 function initDatabase(sqliteDb: DatabaseSync) {
+  // Always ensure 'pages' and 'local_pages' tables exist for local downloaded pages
+  sqliteDb.exec(`
+    CREATE TABLE IF NOT EXISTS pages (
+      book_id INTEGER,
+      page_number INTEGER,
+      page_label TEXT,
+      heading TEXT,
+      content TEXT,
+      PRIMARY KEY (book_id, page_number)
+    );
+
+    CREATE TABLE IF NOT EXISTS local_pages (
+      book_id INTEGER,
+      page_number INTEGER,
+      page_label TEXT,
+      heading TEXT,
+      content TEXT,
+      PRIMARY KEY (book_id, page_number)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pages_book ON pages(book_id);
+    CREATE INDEX IF NOT EXISTS idx_local_pages_book ON local_pages(book_id);
+  `);
+
+  // Detect whether book_translations exists (the real 30 MB 19,049-book schema)
+  const checkTable = sqliteDb
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='book_translations'")
+    .get();
+
+  if (checkTable) {
+    isNormalizedDb = true;
+    console.log('[SQLite] Detected normalized ABLibrary database schema with book_translations');
+    return;
+  }
+
+  // Fallback to standalone flat schema
   sqliteDb.exec(`
     CREATE TABLE IF NOT EXISTS categories (
       id INTEGER PRIMARY KEY,
@@ -74,17 +113,7 @@ function initDatabase(sqliteDb: DatabaseSync) {
       is_downloaded INTEGER DEFAULT 0
     );
 
-    CREATE TABLE IF NOT EXISTS pages (
-      book_id INTEGER,
-      page_number INTEGER,
-      page_label TEXT,
-      heading TEXT,
-      content TEXT,
-      PRIMARY KEY (book_id, page_number)
-    );
-
     CREATE INDEX IF NOT EXISTS idx_books_cat ON books(category_id);
-    CREATE INDEX IF NOT EXISTS idx_pages_book ON pages(book_id);
   `);
 
   // Seed initial categories if empty
@@ -114,60 +143,48 @@ function initDatabase(sqliteDb: DatabaseSync) {
       VALUES (?, ?, ?, ?, ?)
     `);
 
-    for (const b of INITIAL_BOOKS) {
-      insertBook.run(
-        b.id,
-        b.title,
-        b.author_name || null,
-        b.category_id || 1,
-        b.category_name || 'عام',
-        b.page_count || (b.pages ? b.pages.length : 0),
-        b.volume_label || '1',
-        b.volume_number || 1,
-        b.print_year || null,
-        b.author_died ? String(b.author_died) : null,
-        b.death_display || formatDeathYear(b.author_died),
-        b.publisher_name || null,
-        b.printery || null,
-        b.abstract || null,
-        b.is_downloaded ? 1 : 0
-      );
+    sqliteDb.exec('BEGIN TRANSACTION');
+    try {
+      for (const b of INITIAL_BOOKS) {
+        insertBook.run(
+          b.id,
+          b.title,
+          b.author_name || null,
+          b.category_id || 1,
+          b.category_name || 'عام',
+          b.page_count || (b.pages ? b.pages.length : 0),
+          b.volume_label || '1',
+          b.volume_number || 1,
+          b.print_year || null,
+          b.author_died ? String(b.author_died) : null,
+          b.death_display || formatDeathYear(b.author_died, b.author_era),
+          b.publisher_name || null,
+          b.printery || null,
+          b.abstract || null,
+          b.is_downloaded ? 1 : 0
+        );
 
-      // Seed pages if present
-      if (b.pages && b.pages.length > 0) {
-        for (const p of b.pages) {
-          insertPage.run(b.id, p.page_number, p.page_label, p.heading || null, p.content);
+        // Seed pages if present
+        if (b.pages && b.pages.length > 0) {
+          for (const p of b.pages) {
+            insertPage.run(b.id, p.page_number, p.page_label, p.heading || null, p.content);
+          }
+          // Also save to disk
+          try {
+            fs.writeFileSync(
+              path.join(BOOK_JSON_DIR, `${b.id}.json`),
+              JSON.stringify(b.pages, null, 2),
+              'utf-8'
+            );
+          } catch {}
         }
-        // Also save to disk
-        try {
-          fs.writeFileSync(
-            path.join(BOOK_JSON_DIR, `${b.id}.json`),
-            JSON.stringify(b.pages, null, 2),
-            'utf-8'
-          );
-        } catch {}
       }
+      sqliteDb.exec('COMMIT');
+    } catch (err) {
+      sqliteDb.exec('ROLLBACK');
+      throw err;
     }
   }
-}
-
-/**
- * Formats died_at_micros (as found in ablibrary sqlite/protobuf) into Hijri year format.
- */
-function formatDeathYear(died_at_micros: number | bigint | null | undefined): string {
-  if (!died_at_micros) return '';
-  const num = Number(died_at_micros);
-  if (num > 0 && num < 2500) {
-    return `${num} هـ`;
-  }
-  // If microsecond representation, approximate to positive era if negative
-  if (num < 0) {
-    const absYear = Math.abs(Math.round(num / (365.25 * 24 * 3600 * 1000000)));
-    if (absYear > 0 && absYear < 2000) {
-      return `${absYear} هـ`;
-    }
-  }
-  return '';
 }
 
 // ---------------------------------------------------------------------------
@@ -243,8 +260,26 @@ async function callGeminiWithRetry<T>(
 // GET /api/categories - list all categories
 app.get('/api/categories', (_req, res) => {
   try {
-    const rows = db.prepare('SELECT * FROM categories ORDER BY id ASC').all();
-    res.json(rows);
+    if (isNormalizedDb) {
+      const rows = db
+        .prepare(`
+          SELECT 
+            c.id,
+            COALESCE(ct.name, 'قسم ' || c.id) AS name,
+            COALESCE(counts.cnt, 0) AS book_count
+          FROM categories c
+          LEFT JOIN category_translations ct ON ct.category_id = c.id AND (ct.language_id = 1 OR ct.language_id = '1')
+          LEFT JOIN (
+            SELECT category_id, COUNT(*) AS cnt FROM book_categories GROUP BY category_id
+          ) counts ON counts.category_id = c.id
+          ORDER BY c.id ASC
+        `)
+        .all();
+      res.json(rows);
+    } else {
+      const rows = db.prepare('SELECT * FROM categories ORDER BY id ASC').all();
+      res.json(rows);
+    }
   } catch (err: any) {
     res.status(500).json({ error: err.message, fallback: INITIAL_CATEGORIES });
   }
@@ -260,6 +295,101 @@ app.get('/api/books', (req, res) => {
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || '50'), 10)));
     const offset = (page - 1) * limit;
 
+    if (isNormalizedDb) {
+      let whereClause = ' WHERE 1=1';
+      const params: any[] = [];
+
+      if (q) {
+        whereClause += ' AND (bt.title LIKE ? OR auth.author_name LIKE ? OR bt.abstract LIKE ? OR CAST(b.id AS TEXT) = ?)';
+        const like = `%${q}%`;
+        params.push(like, like, like, q);
+      }
+
+      if (categoryId > 0) {
+        whereClause += ' AND bc.category_id = ?';
+        params.push(categoryId);
+      }
+
+      if (offlineOnly) {
+        whereClause += ' AND (EXISTS (SELECT 1 FROM pages p WHERE p.book_id = b.id) OR EXISTS (SELECT 1 FROM local_pages lp WHERE lp.book_id = b.id))';
+      }
+
+      // Count query
+      const countSql = `
+        SELECT COUNT(DISTINCT b.id) AS count
+        FROM books b
+        LEFT JOIN book_translations bt ON bt.book_id = b.id AND (bt.language_id = 1 OR bt.language_id = '1')
+        LEFT JOIN (
+          SELECT bcon.book_id, ct.name AS author_name
+          FROM book_contributors bcon
+          JOIN contributor_translations ct ON ct.contributor_id = bcon.contributor_id AND (ct.language_id = 1 OR ct.language_id = '1')
+          GROUP BY bcon.book_id
+        ) auth ON auth.book_id = b.id
+        LEFT JOIN book_categories bc ON bc.book_id = b.id
+        ${whereClause}
+      `;
+      const countRow = db.prepare(countSql).get(...params) as any;
+      const total = countRow ? countRow.count : 0;
+
+      // Select items
+      const selectSql = `
+        SELECT 
+          b.id,
+          COALESCE(bt.title, 'كتاب #' || b.id) AS title,
+          COALESCE(auth.author_name, '') AS author_name,
+          auth.author_era,
+          auth.author_died,
+          bc.category_id,
+          COALESCE(catt.name, 'عام') AS category_name,
+          COALESCE(b.page_count, 0) AS page_count,
+          b.volume_label,
+          b.volume_number,
+          b.print_year,
+          bt.abstract,
+          CASE 
+            WHEN EXISTS (SELECT 1 FROM pages p WHERE p.book_id = b.id) THEN 1
+            WHEN EXISTS (SELECT 1 FROM local_pages lp WHERE lp.book_id = b.id) THEN 1
+            ELSE 0 
+          END AS is_downloaded
+        FROM books b
+        LEFT JOIN book_translations bt ON bt.book_id = b.id AND (bt.language_id = 1 OR bt.language_id = '1')
+        LEFT JOIN (
+          SELECT 
+            bcon.book_id, 
+            ct.name AS author_name,
+            ct.era AS author_era,
+            ct.died_at AS author_died
+          FROM book_contributors bcon
+          JOIN contributor_translations ct ON ct.contributor_id = bcon.contributor_id AND (ct.language_id = 1 OR ct.language_id = '1')
+          GROUP BY bcon.book_id
+        ) auth ON auth.book_id = b.id
+        LEFT JOIN book_categories bc ON bc.book_id = b.id
+        LEFT JOIN category_translations catt ON catt.category_id = bc.category_id AND (catt.language_id = 1 OR catt.language_id = '1')
+        ${whereClause}
+        ORDER BY is_downloaded DESC, b.id ASC
+        LIMIT ? OFFSET ?
+      `;
+
+      params.push(limit, offset);
+      const rows = db.prepare(selectSql).all(...params) as any[];
+
+      const mapped = rows.map((b) => ({
+        ...b,
+        is_downloaded: Boolean(b.is_downloaded),
+        death_display: formatDeathYear(b.author_died, b.author_era),
+      }));
+
+      res.json({
+        books: mapped,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      });
+      return;
+    }
+
+    // Flat standalone schema query
     let sql = 'SELECT * FROM books WHERE 1=1';
     const params: any[] = [];
 
@@ -292,6 +422,7 @@ app.get('/api/books', (req, res) => {
     const mapped = books.map((b) => ({
       ...b,
       is_downloaded: Boolean(b.is_downloaded),
+      death_display: b.death_display || formatDeathYear(b.died_at_micros, b.author_era),
     }));
 
     res.json({
@@ -310,7 +441,49 @@ app.get('/api/books', (req, res) => {
 app.get('/api/books/:bookId', (req, res) => {
   try {
     const bookId = parseInt(req.params.bookId, 10);
-    const book = db.prepare('SELECT * FROM books WHERE id = ?').get(bookId) as any;
+    let book: any = null;
+
+    if (isNormalizedDb) {
+      const selectSql = `
+        SELECT 
+          b.id,
+          COALESCE(bt.title, 'كتاب #' || b.id) AS title,
+          COALESCE(auth.author_name, '') AS author_name,
+          auth.author_era,
+          auth.author_died,
+          bc.category_id,
+          COALESCE(catt.name, 'عام') AS category_name,
+          COALESCE(b.page_count, 0) AS page_count,
+          b.volume_label,
+          b.volume_number,
+          b.print_year,
+          bt.abstract
+        FROM books b
+        LEFT JOIN book_translations bt ON bt.book_id = b.id AND (bt.language_id = 1 OR bt.language_id = '1')
+        LEFT JOIN (
+          SELECT 
+            bcon.book_id, 
+            ct.name AS author_name,
+            ct.era AS author_era,
+            ct.died_at AS author_died
+          FROM book_contributors bcon
+          JOIN contributor_translations ct ON ct.contributor_id = bcon.contributor_id AND (ct.language_id = 1 OR ct.language_id = '1')
+          GROUP BY bcon.book_id
+        ) auth ON auth.book_id = b.id
+        LEFT JOIN book_categories bc ON bc.book_id = b.id
+        LEFT JOIN category_translations catt ON catt.category_id = bc.category_id AND (catt.language_id = 1 OR catt.language_id = '1')
+        WHERE b.id = ?
+      `;
+      book = db.prepare(selectSql).get(bookId) as any;
+      if (book) {
+        book.death_display = formatDeathYear(book.author_died, book.author_era);
+      }
+    } else {
+      book = db.prepare('SELECT * FROM books WHERE id = ?').get(bookId) as any;
+      if (book) {
+        book.death_display = book.death_display || formatDeathYear(book.died_at_micros, book.author_era);
+      }
+    }
 
     if (!book) {
       res.status(404).json({ error: 'Book not found' });
@@ -321,6 +494,14 @@ app.get('/api/books/:bookId', (req, res) => {
     let pages = db
       .prepare('SELECT page_number, page_label, heading, content FROM pages WHERE book_id = ? ORDER BY page_number ASC')
       .all(bookId) as any[];
+
+    if (pages.length === 0) {
+      try {
+        pages = db
+          .prepare('SELECT page_number, page_label, heading, content FROM local_pages WHERE book_id = ? ORDER BY page_number ASC')
+          .all(bookId) as any[];
+      } catch {}
+    }
 
     if (pages.length === 0) {
       // Check disk cache
@@ -347,7 +528,7 @@ app.get('/api/books/:bookId', (req, res) => {
 app.get('/api/books/:bookId/pages', (req, res) => {
   try {
     const bookId = parseInt(req.params.bookId, 10);
-    const pages = db
+    let pages = db
       .prepare('SELECT page_number, page_label, heading, content FROM pages WHERE book_id = ? ORDER BY page_number ASC')
       .all(bookId) as any[];
 
@@ -355,6 +536,16 @@ app.get('/api/books/:bookId/pages', (req, res) => {
       res.json({ bookId, count: pages.length, pages });
       return;
     }
+
+    try {
+      pages = db
+        .prepare('SELECT page_number, page_label, heading, content FROM local_pages WHERE book_id = ? ORDER BY page_number ASC')
+        .all(bookId) as any[];
+      if (pages.length > 0) {
+        res.json({ bookId, count: pages.length, pages });
+        return;
+      }
+    } catch {}
 
     const diskPath = path.join(BOOK_JSON_DIR, `${bookId}.json`);
     if (fs.existsSync(diskPath)) {
@@ -385,36 +576,72 @@ app.post('/api/books/:bookId/pages', (req, res) => {
     const diskPath = path.join(BOOK_JSON_DIR, `${bookId}.json`);
     fs.writeFileSync(diskPath, JSON.stringify(pages, null, 2), 'utf-8');
 
-    // Save to SQLite
+    // Save to SQLite with a high-performance transaction
     const insertPage = db.prepare(`
       INSERT OR REPLACE INTO pages (book_id, page_number, page_label, heading, content)
       VALUES (?, ?, ?, ?, ?)
     `);
 
-    for (const p of pages) {
-      insertPage.run(
-        bookId,
-        p.page_number,
-        String(p.page_label || p.page_number),
-        p.heading || null,
-        p.content || ''
-      );
+    db.exec('BEGIN TRANSACTION');
+    try {
+      for (const p of pages) {
+        insertPage.run(
+          bookId,
+          p.page_number,
+          String(p.page_label || p.page_number),
+          p.heading || null,
+          p.content || ''
+        );
+      }
+      db.exec('COMMIT');
+    } catch (insertErr) {
+      db.exec('ROLLBACK');
+      throw insertErr;
     }
 
+    // Also update local_pages table in a transaction if it exists
+    try {
+      const insertLocal = db.prepare(`
+        INSERT OR REPLACE INTO local_pages (book_id, page_number, page_label, heading, content)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      db.exec('BEGIN TRANSACTION');
+      try {
+        for (const p of pages) {
+          insertLocal.run(
+            bookId,
+            p.page_number,
+            String(p.page_label || p.page_number),
+            p.heading || null,
+            p.content || ''
+          );
+        }
+        db.exec('COMMIT');
+      } catch (localTxErr) {
+        db.exec('ROLLBACK');
+      }
+    } catch {}
+
     // Update or insert book record
-    const exists = db.prepare('SELECT id FROM books WHERE id = ?').get(bookId);
-    if (exists) {
-      db.prepare(`
-        UPDATE books SET
-          page_count = ?,
-          is_downloaded = 1
-        WHERE id = ?
-      `).run(pages.length, bookId);
+    if (!isNormalizedDb) {
+      const exists = db.prepare('SELECT id FROM books WHERE id = ?').get(bookId);
+      if (exists) {
+        db.prepare(`
+          UPDATE books SET
+            page_count = ?,
+            is_downloaded = 1
+          WHERE id = ?
+        `).run(pages.length, bookId);
+      } else {
+        db.prepare(`
+          INSERT INTO books (id, title, author_name, category_id, category_name, page_count, is_downloaded)
+          VALUES (?, ?, ?, 1, 'كتب محلية ومستوردة', ?, 1)
+        `).run(bookId, title || `كتاب #${bookId}`, author || 'مؤلف غير محدد', pages.length);
+      }
     } else {
-      db.prepare(`
-        INSERT INTO books (id, title, author_name, category_id, category_name, page_count, is_downloaded)
-        VALUES (?, ?, ?, 1, 'كتب محلية ومستوردة', ?, 1)
-      `).run(bookId, title || `كتاب #${bookId}`, author || 'مؤلف غير محدد', pages.length);
+      try {
+        db.prepare('UPDATE books SET page_count = ? WHERE id = ?').run(pages.length, bookId);
+      } catch {}
     }
 
     res.json({ success: true, bookId, savedCount: pages.length });
@@ -610,19 +837,55 @@ app.post('/api/books/:bookId/fetch-remote', async (req, res) => {
           INSERT OR REPLACE INTO pages (book_id, page_number, page_label, heading, content)
           VALUES (?, ?, ?, ?, ?)
         `);
-        for (const p of pages) {
-          insertPage.run(
-            bId,
-            p.page_number,
-            String(p.page_label || p.page_number),
-            p.heading || null,
-            p.content || ''
-          );
+        db.exec('BEGIN TRANSACTION');
+        try {
+          for (const p of pages) {
+            insertPage.run(
+              bId,
+              p.page_number,
+              String(p.page_label || p.page_number),
+              p.heading || null,
+              p.content || ''
+            );
+          }
+          db.exec('COMMIT');
+        } catch (txErr) {
+          db.exec('ROLLBACK');
+          throw txErr;
         }
-        db.prepare('UPDATE books SET page_count = ?, is_downloaded = 1 WHERE id = ?').run(
-          pages.length,
-          bId
-        );
+
+        try {
+          const insertLocal = db.prepare(`
+            INSERT OR REPLACE INTO local_pages (book_id, page_number, page_label, heading, content)
+            VALUES (?, ?, ?, ?, ?)
+          `);
+          db.exec('BEGIN TRANSACTION');
+          try {
+            for (const p of pages) {
+              insertLocal.run(
+                bId,
+                p.page_number,
+                String(p.page_label || p.page_number),
+                p.heading || null,
+                p.content || ''
+              );
+            }
+            db.exec('COMMIT');
+          } catch (localTxErr) {
+            db.exec('ROLLBACK');
+          }
+        } catch {}
+
+        if (!isNormalizedDb) {
+          db.prepare('UPDATE books SET page_count = ?, is_downloaded = 1 WHERE id = ?').run(
+            pages.length,
+            bId
+          );
+        } else {
+          try {
+            db.prepare('UPDATE books SET page_count = ? WHERE id = ?').run(pages.length, bId);
+          } catch {}
+        }
       }
     } catch (saveErr) {
       console.warn('Failed to cache fetched pages:', saveErr);

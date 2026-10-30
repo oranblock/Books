@@ -79,6 +79,9 @@ export default function App() {
       if (idbBooks && idbBooks.length > 0) {
         setBooks(idbBooks);
       }
+    }).then(({ bookmarks: idbBm, preferences: idbPrefs }) => {
+      if (idbBm && idbBm.length > 0) setBookmarks(idbBm);
+      if (idbPrefs) setPreferences(idbPrefs);
     });
 
     // 3. Try to sync catalog from backend SQLite server if available
@@ -133,6 +136,40 @@ export default function App() {
     showToast('تم حفظ الملاحظة الدراسية');
   };
 
+  // Reader opening handler with lazy-loading from server/IndexedDB if needed
+  const handleOpenBookReader = async (book: Book, initialPageNum?: number) => {
+    // If book already has pages in client memory, open immediately
+    if (book.pages && book.pages.length > 0) {
+      setReaderInitialPage(initialPageNum);
+      setActiveBookForReader(book);
+      return;
+    }
+
+    // Try fetching pages from backend SQLite / disk cache
+    showToast('جاري استدعاء صفحات الكتاب...');
+    try {
+      const res = await fetch(`/api/books/${book.id}/pages`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.pages) && data.pages.length > 0) {
+          const updated = importPagesIntoBook(book.id, data.pages, { customTitle: book.title });
+          const refreshed = loadStoredBooks();
+          setBooks(refreshed);
+          setReaderInitialPage(initialPageNum);
+          setActiveBookForReader(updated);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch pages from server:', e);
+    }
+
+    // If no pages were found, open the import modal for the book
+    showToast('لم تتوفر صفحات الكتاب محلياً بعد، يرجى الاستيراد');
+    setImportTargetBook(book);
+    setShowImportModal(true);
+  };
+
   // Import success helper
   const handleImportSuccess = (bookId: number, newPages: BookPage[], title?: string) => {
     const updatedBook = importPagesIntoBook(bookId, newPages, { customTitle: title });
@@ -170,7 +207,7 @@ export default function App() {
 
   // Offline count
   const offlineCount = useMemo(() => {
-    return books.filter((b) => b.is_downloaded && b.pages && b.pages.length > 0).length;
+    return books.filter((b) => Boolean(b.is_downloaded || (b.pages && b.pages.length > 0))).length;
   }, [books]);
 
   // Filtered books
@@ -178,7 +215,7 @@ export default function App() {
     return books.filter((b) => {
       // Offline filter
       if (activeTab === 'offline' || onlyOffline) {
-        if (!b.is_downloaded || !b.pages || b.pages.length === 0) return false;
+        if (!b.is_downloaded && (!b.pages || b.pages.length === 0)) return false;
       }
 
       // Category filter
@@ -281,8 +318,7 @@ export default function App() {
             <KidAskConsole
               sahifaBook={sahifaBook}
               onOpenReaderAtPage={(pageNum) => {
-                setReaderInitialPage(pageNum);
-                setActiveBookForReader(sahifaBook);
+                handleOpenBookReader(sahifaBook, pageNum);
               }}
             />
           ) : (
@@ -402,8 +438,7 @@ export default function App() {
                     key={book.id}
                     book={book}
                     onOpenReader={(b) => {
-                      setReaderInitialPage(undefined);
-                      setActiveBookForReader(b);
+                      handleOpenBookReader(b);
                     }}
                     onOpenImportForBook={(b) => {
                       setImportTargetBook(b);
@@ -460,8 +495,7 @@ export default function App() {
             const b = books.find((x) => x.id === bookId);
             if (b) {
               setShowBookmarksModal(false);
-              setReaderInitialPage(pageNumber);
-              setActiveBookForReader(b);
+              handleOpenBookReader(b, pageNumber);
             }
           }}
           onRemoveBookmark={(bm) => {

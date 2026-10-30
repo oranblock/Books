@@ -15,7 +15,7 @@ export const BookCard: React.FC<BookCardProps> = ({
   onOpenImportForBook,
   onBookDownloaded,
 }) => {
-  const isDownloaded = Boolean(book.is_downloaded && book.pages && book.pages.length > 0);
+  const isDownloaded = Boolean(book.is_downloaded || (book.pages && book.pages.length > 0));
   const [isDownloading, setIsDownloading] = React.useState<boolean>(false);
   const [downloadError, setDownloadError] = React.useState<string | null>(null);
 
