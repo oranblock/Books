@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import net.ablibrary.local.model.Book
+import net.ablibrary.local.utils.TextParser
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,10 +36,12 @@ fun HomeScreen(
     onTabChange: (String) -> Unit,
     onBookClick: (Book) -> Unit,
     onOpenBookmarks: () -> Unit,
+    onOpenImport: () -> Unit,
     onOpenKidConsolePage: (Int) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategoryId by remember { mutableStateOf(0) }
+    var selectedBookForDetails by remember { mutableStateOf<Book?>(null) }
 
     val categories = remember {
         listOf(
@@ -47,22 +51,34 @@ fun HomeScreen(
             3 to "الفقه وأحكام الشريعة",
             5 to "العقائد وعلم الكلام",
             6 to "علوم القرآن والتفسير",
-            8 to "الأخلاق والعرفان"
+            8 to "الأخلاق والعرفان",
+            4 to "التاريخ والتراجم والسير",
+            7 to "الأدب والتراث"
         )
     }
 
     val sahifaBook = remember(books) { books.find { it.id == 5586L } ?: books.firstOrNull() }
+    val offlineCount = remember(books) { books.count { it.isDownloaded || it.pages.isNotEmpty() } }
 
     val filteredBooks = remember(books, searchQuery, selectedCategoryId, activeTab) {
+        val rawQ = searchQuery.trim()
+        val normQ = TextParser.normalizeForSearch(rawQ)
+
         books.filter { b ->
-            if (activeTab == "offline" && !b.isDownloaded) return@filter false
+            if (activeTab == "offline" && !b.isDownloaded && b.pages.isEmpty()) return@filter false
             if (selectedCategoryId != 0 && b.categoryId != selectedCategoryId.toLong()) return@filter false
-            if (searchQuery.isNotBlank()) {
-                val q = searchQuery.trim()
-                val matchTitle = b.title.contains(q, ignoreCase = true)
-                val matchAuthor = b.authorName?.contains(q, ignoreCase = true) == true
-                val matchId = b.id.toString() == q
-                if (!matchTitle && !matchAuthor && !matchId) return@filter false
+            if (rawQ.isNotBlank()) {
+                val normTitle = TextParser.normalizeForSearch(b.title)
+                val normAuthor = TextParser.normalizeForSearch(b.authorName ?: "")
+                val normAbstract = TextParser.normalizeForSearch(b.abstract ?: "")
+                val matchId = b.id.toString() == rawQ
+
+                val match = normTitle.contains(normQ) ||
+                        normAuthor.contains(normQ) ||
+                        normAbstract.contains(normQ) ||
+                        matchId
+
+                if (!match) return@filter false
             }
             true
         }
@@ -72,7 +88,10 @@ fun HomeScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Box(
                             modifier = Modifier
                                 .size(34.dp)
@@ -80,18 +99,51 @@ fun HomeScreen(
                                 .background(LibraryColors.TealPrimary.copy(alpha = 0.2f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.Book, contentDescription = null, tint = LibraryColors.TealGlow, modifier = Modifier.size(18.dp))
+                            Icon(
+                                Icons.Default.Book,
+                                contentDescription = null,
+                                tint = LibraryColors.TealGlow,
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
                         Column {
-                            Text("مكتبة أهل البيت (ع)", color = LibraryColors.TextWhite, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                            Text("النسخة المحلية المستقلة (100% دون اتصال)", color = LibraryColors.TextMuted, fontSize = 10.sp)
+                            Text(
+                                "مكتبة أهل البيت (ع)",
+                                color = LibraryColors.TextWhite,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "النسخة المحلية المتنقلة (100% دون اتصال)",
+                                color = LibraryColors.TextMuted,
+                                fontSize = 10.sp
+                            )
                         }
                     }
                 },
                 actions = {
+                    IconButton(onClick = onOpenImport) {
+                        Icon(
+                            Icons.Default.Upload,
+                            contentDescription = "استيراد كتاب",
+                            tint = LibraryColors.TealGlow
+                        )
+                    }
                     IconButton(onClick = onOpenBookmarks) {
-                        BadgedBox(badge = { if (bookmarkCount > 0) Badge { Text("$bookmarkCount") } }) {
-                            Icon(Icons.Default.Bookmark, contentDescription = "Bookmarks", tint = LibraryColors.AmberAccent)
+                        BadgedBox(
+                            badge = {
+                                if (bookmarkCount > 0) {
+                                    Badge(containerColor = LibraryColors.AmberAccent) {
+                                        Text("$bookmarkCount", color = Color.Black, fontSize = 9.sp)
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                Icons.Default.Bookmark,
+                                contentDescription = "Bookmarks",
+                                tint = LibraryColors.AmberAccent
+                            )
                         }
                     }
                 },
@@ -105,6 +157,7 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            // Mode selector ribbon
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -135,7 +188,7 @@ fun HomeScreen(
                 FilterChip(
                     selected = activeTab == "offline",
                     onClick = { onTabChange("offline") },
-                    label = { Text("المتاحة محلياً", fontSize = 12.sp) },
+                    label = { Text("المتاحة محلياً ($offlineCount)", fontSize = 12.sp) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = LibraryColors.GreenOffline,
                         selectedLabelColor = Color.Black
@@ -149,6 +202,10 @@ fun HomeScreen(
                         sahifaBook = sahifaBook,
                         onOpenPage = onOpenKidConsolePage
                     )
+                } else {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("الرجاء تحميل أو استيراد كتاب الصحيفة السجادية (#5586) أولاً.", color = LibraryColors.TextMuted)
+                    }
                 }
             } else {
                 Column(
@@ -201,18 +258,51 @@ fun HomeScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 280.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(filteredBooks) { book ->
-                            BookCard(book = book, onOpenReader = onBookClick)
+                    if (filteredBooks.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("لا توجد كتب مطابقة لبحثك.", color = LibraryColors.TextMuted, fontSize = 14.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedButton(onClick = {
+                                    searchQuery = ""
+                                    selectedCategoryId = 0
+                                }) {
+                                    Text("إعادة تعيين الفلاتر", color = LibraryColors.TealGlow)
+                                }
+                            }
+                        }
+                    } else {
+                        LazyVerticalGrid(
+                            columns = GridCells.Adaptive(minSize = 280.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(filteredBooks) { book ->
+                                BookCard(
+                                    book = book,
+                                    onOpenReader = onBookClick,
+                                    onShowDetails = { selectedBookForDetails = it }
+                                )
+                            }
                         }
                     }
                 }
             }
+        }
+
+        // Book details dialog
+        selectedBookForDetails?.let { book ->
+            BookDetailsDialog(
+                book = book,
+                onOpenReader = onBookClick,
+                onDismiss = { selectedBookForDetails = null }
+            )
         }
     }
 }

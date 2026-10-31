@@ -126,33 +126,33 @@ export const ImportModal: React.FC<ImportModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
-      <div className="bg-[#0d1516] border border-white/10 rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl text-slate-200 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
+      <div className="bg-[#0d1516] border border-white/10 rounded-2xl max-w-3xl w-full max-h-[92dvh] flex flex-col shadow-2xl text-slate-200 overflow-hidden">
         {/* Header */}
-        <header className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-[#162224]/50">
+        <header className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-white/10 flex items-center justify-between bg-[#162224]/50 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-[#00898F]/20 flex items-center justify-center text-[#00b4bc]">
+            <div className="w-8 h-8 rounded-lg bg-[#00898F]/20 flex items-center justify-center text-[#00b4bc] shrink-0">
               <Upload className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white font-['Noto_Naskh_Arabic']">
+              <h2 className="text-sm sm:text-base font-bold text-white font-['Noto_Naskh_Arabic']">
                 استيراد وتحويل كتاب محلي
               </h2>
-              <p className="text-xs text-slate-400">
+              <p className="text-[11px] sm:text-xs text-slate-400">
                 دعم أصيل لملفات contents_full.json و sahifa_5586.txt والنصوص المجزأة
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </header>
 
         {/* Body */}
-        <div className="p-6 overflow-y-auto space-y-5 flex-1 text-xs">
+        <div className="p-3.5 sm:p-6 overflow-y-auto space-y-4 sm:space-y-5 flex-1 text-xs">
           {/* Target Book Selection */}
           <div className="bg-white/5 border border-white/5 rounded-xl p-4 space-y-3">
             <div className="flex items-center justify-between">

@@ -60,6 +60,7 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
   const pages: BookPage[] = book.pages || [];
   const [activePageIndex, setActivePageIndex] = useState<number>(0);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [showMobileSearch, setShowMobileSearch] = useState<boolean>(false);
   const [showToc, setShowToc] = useState<boolean>(false);
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [showInfo, setShowInfo] = useState<boolean>(false);
@@ -317,14 +318,14 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
   };
 
   return (
-    <div className={`fixed inset-0 z-50 flex flex-col ${currentTheme.bg} ${currentTheme.text} transition-colors select-text`}>
+    <div className={`fixed inset-0 z-50 flex flex-col ${currentTheme.bg} ${currentTheme.text} transition-colors select-text h-[100dvh]`}>
       {/* Top Reader Ribbon */}
-      <header className={`px-4 py-2.5 border-b flex items-center justify-between gap-3 ${currentTheme.cardBg} ${currentTheme.border} shrink-0`}>
+      <header className={`px-3 sm:px-4 py-2 sm:py-2.5 border-b flex items-center justify-between gap-2 sm:gap-3 ${currentTheme.cardBg} ${currentTheme.border} shrink-0`}>
         {/* Left: Back / Title */}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             onClick={onClose}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium hover:opacity-80 transition-all cursor-pointer shrink-0"
+            className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg border text-xs font-medium hover:opacity-80 transition-all cursor-pointer shrink-0"
             style={{ borderColor: 'inherit' }}
             title="الرجوع إلى قائمة الكتب"
           >
@@ -333,15 +334,15 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
           </button>
 
           <div className="min-w-0">
-            <h2 className="text-sm md:text-base font-bold truncate font-['Noto_Naskh_Arabic']">
+            <h2 className="text-xs sm:text-sm md:text-base font-bold truncate font-['Noto_Naskh_Arabic']">
               {book.title}
               {book.volume_label && (
-                <span className="text-xs font-normal opacity-80 mr-2">
+                <span className="text-[11px] sm:text-xs font-normal opacity-80 mr-1.5">
                   (ج {book.volume_label})
                 </span>
               )}
             </h2>
-            <div className="text-[11px] opacity-75 truncate flex items-center gap-1.5">
+            <div className="text-[10px] sm:text-[11px] opacity-75 truncate flex items-center gap-1.5">
               <span>{book.author_name || 'مؤلف غير محدد'}</span>
               {book.death_display && <span>({book.death_display})</span>}
               <span>· #{book.id}</span>
@@ -349,7 +350,7 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
           </div>
         </div>
 
-        {/* Center: Search & Page navigation */}
+        {/* Center: Search (Desktop) */}
         <div className="hidden lg:flex items-center gap-2 max-w-sm w-full">
           <div className="relative w-full">
             <Search className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 opacity-50" />
@@ -378,15 +379,27 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
         </div>
 
         {/* Right: Controls & Actions */}
-        <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-1.5 md:gap-2 shrink-0">
+          {/* Mobile Search Toggle */}
+          <button
+            onClick={() => setShowMobileSearch(!showMobileSearch)}
+            className={`lg:hidden p-1.5 rounded-lg border transition-colors cursor-pointer ${
+              showMobileSearch ? 'bg-[#00898F] text-white border-transparent' : 'hover:bg-white/5'
+            }`}
+            style={{ borderColor: showMobileSearch ? undefined : 'inherit' }}
+            title="بحث داخل الكتاب"
+          >
+            <Search className="w-4 h-4" />
+          </button>
+
           {/* Audio Recite Button */}
           <button
             onClick={() => toggleAudio()}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+            className={`flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
               isPlayingAudio ? 'bg-amber-500 text-black border-amber-600' : 'hover:bg-white/5'
             }`}
             style={{ borderColor: isPlayingAudio ? undefined : 'inherit' }}
-            title={isPlayingAudio ? 'إيقاف القراءة الصوتية' : 'استماع للصفحة الحالية (قراءة آلية)'}
+            title={isPlayingAudio ? 'إيقاف القراءة الصوتية' : 'استماع للصفحة الحالية'}
           >
             {isPlayingAudio ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
             <span className="hidden md:inline">{isPlayingAudio ? 'إيقاف' : 'استماع'}</span>
@@ -395,7 +408,7 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
           {/* Table of Contents */}
           <button
             onClick={() => setShowToc(!showToc)}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+            className={`flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
               showToc ? 'bg-[#00898F] text-white border-transparent' : 'hover:bg-white/5'
             }`}
             style={{ borderColor: showToc ? undefined : 'inherit' }}
@@ -413,7 +426,7 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
           {/* Settings Menu */}
           <button
             onClick={() => setShowSettings(!showSettings)}
-            className={`p-1.5 rounded-lg border transition-colors ${
+            className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
               showSettings ? 'bg-[#00898F] text-white border-transparent' : 'hover:bg-white/5'
             }`}
             style={{ borderColor: showSettings ? undefined : 'inherit' }}
@@ -425,7 +438,7 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
           {/* Book Info */}
           <button
             onClick={() => setShowInfo(!showInfo)}
-            className={`p-1.5 rounded-lg border transition-colors ${
+            className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
               showInfo ? 'bg-white/20' : 'hover:bg-white/5'
             }`}
             style={{ borderColor: 'inherit' }}
@@ -437,7 +450,7 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
           {/* Close */}
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg border hover:bg-rose-500/20 hover:text-rose-400 transition-colors"
+            className="p-1.5 rounded-lg border hover:bg-rose-500/20 hover:text-rose-400 transition-colors cursor-pointer"
             style={{ borderColor: 'inherit' }}
             title="إغلاق القارئ"
           >
@@ -446,12 +459,43 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
         </div>
       </header>
 
+      {/* Mobile Expandable Search Bar */}
+      {showMobileSearch && (
+        <div className={`lg:hidden px-3 py-2 border-b flex items-center gap-2 ${currentTheme.cardBg} ${currentTheme.border} shrink-0`}>
+          <div className="relative flex-1">
+            <Search className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 opacity-50" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="ابحث في صفحات الكتاب..."
+              className="w-full text-xs py-1.5 pr-8 pl-3 rounded-lg border bg-transparent focus:outline-none focus:ring-1 focus:ring-[#00898F]"
+              style={{ borderColor: 'inherit' }}
+              autoFocus
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs opacity-60 hover:opacity-100"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          {searchQuery && (
+            <span className="text-xs font-mono tabular-nums opacity-75 whitespace-nowrap">
+              {filteredPages.length} نتيجة
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Main Reading Canvas */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* Table of Contents Drawer */}
         {showToc && (
           <aside
-            className={`w-80 border-l ${currentTheme.cardBg} ${currentTheme.border} p-4 flex flex-col shrink-0 z-30 transition-all`}
+            className={`w-full sm:w-80 border-l ${currentTheme.cardBg} ${currentTheme.border} p-4 flex flex-col shrink-0 z-40 transition-all fixed inset-y-0 right-0 sm:relative sm:inset-auto shadow-2xl`}
           >
             <div className="flex items-center justify-between pb-3 mb-3 border-b" style={{ borderColor: 'inherit' }}>
               <div className="flex items-center gap-2">
@@ -496,7 +540,7 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
         {/* Settings Dropdown/Drawer */}
         {showSettings && (
           <div
-            className={`absolute top-2 left-4 z-40 w-72 rounded-xl p-4 border shadow-2xl ${currentTheme.cardBg} ${currentTheme.border} space-y-4`}
+            className={`fixed sm:absolute top-12 sm:top-2 inset-x-2 sm:inset-x-auto sm:left-4 z-50 w-auto sm:w-72 rounded-xl p-4 border shadow-2xl ${currentTheme.cardBg} ${currentTheme.border} space-y-4 max-h-[85dvh] overflow-y-auto`}
           >
             <div className="flex items-center justify-between pb-2 border-b" style={{ borderColor: 'inherit' }}>
               <span className="text-xs font-bold">خيارات القراءة والخط</span>
@@ -685,7 +729,7 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
         {/* Book Info Drawer */}
         {showInfo && (
           <aside
-            className={`w-80 border-l ${currentTheme.cardBg} ${currentTheme.border} p-5 flex flex-col shrink-0 z-30 overflow-y-auto space-y-4`}
+            className={`w-full sm:w-80 border-l ${currentTheme.cardBg} ${currentTheme.border} p-5 flex flex-col shrink-0 z-40 overflow-y-auto space-y-4 fixed inset-y-0 right-0 sm:relative sm:inset-auto shadow-2xl`}
           >
             <div className="flex items-center justify-between pb-2 border-b" style={{ borderColor: 'inherit' }}>
               <h3 className="text-sm font-bold font-['Noto_Naskh_Arabic']">بطاقة وهوية الكتاب</h3>
@@ -767,7 +811,7 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
         {/* Content Viewer Canvas */}
         <main
           ref={containerRef}
-          className="flex-1 overflow-y-auto px-4 sm:px-8 md:px-16 lg:px-24 py-8 space-y-8"
+          className="flex-1 overflow-y-auto px-2.5 sm:px-8 md:px-16 lg:px-24 py-4 sm:py-8 space-y-4 sm:space-y-8"
         >
           {filteredPages.length === 0 ? (
             <div className="text-center py-20 opacity-70">
@@ -775,7 +819,7 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
               <p className="text-sm">لم يتم العثور على صفحات تطابق بحثك: &quot;{searchQuery}&quot;</p>
               <button
                 onClick={() => setSearchQuery('')}
-                className="mt-3 text-xs text-[#00898F] underline cursor-pointer"
+                className="mt-3 text-xs text-[#00b4bc] underline cursor-pointer"
               >
                 مسح البحث
               </button>
@@ -793,7 +837,7 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
                 <article
                   key={page.page_number}
                   id={`page-${page.page_number}`}
-                  className={`max-w-3xl mx-auto rounded-2xl border p-6 sm:p-8 transition-shadow ${currentTheme.cardBg} ${currentTheme.border} shadow-sm relative group`}
+                  className={`max-w-3xl mx-auto rounded-xl sm:rounded-2xl border p-3.5 sm:p-8 transition-shadow ${currentTheme.cardBg} ${currentTheme.border} shadow-xs relative group`}
                 >
                   {/* Page Header */}
                   <header

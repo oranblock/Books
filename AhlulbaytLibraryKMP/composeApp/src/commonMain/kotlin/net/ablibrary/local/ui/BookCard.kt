@@ -7,8 +7,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -21,14 +22,17 @@ import net.ablibrary.local.model.Book
 @Composable
 fun BookCard(
     book: Book,
-    onOpenReader: (Book) -> Unit
+    onOpenReader: (Book) -> Unit,
+    onShowDetails: (Book) -> Unit = {}
 ) {
+    val isDownloaded = book.isDownloaded || book.pages.isNotEmpty()
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(LibraryColors.SurfaceDark)
-            .border(1.dp, LibraryColors.BorderSubtle, RoundedCornerShape(14.dp))
+            .background(if (isDownloaded) LibraryColors.SurfaceDark else LibraryColors.SurfaceDark.copy(alpha = 0.6f))
+            .border(1.dp, if (isDownloaded) LibraryColors.BorderSubtle else LibraryColors.BorderSubtle.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
             .clickable { onOpenReader(book) }
             .padding(16.dp)
     ) {
@@ -48,15 +52,28 @@ fun BookCard(
                         Text(" · ج $vol", color = LibraryColors.TextMuted, fontSize = 11.sp)
                     }
                 }
-                Text(
-                    text = "#${book.id}",
-                    color = LibraryColors.TextMuted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    IconButton(
+                        onClick = { onShowDetails(book) },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = "تفاصيل",
+                            tint = LibraryColors.TextMuted,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Text(
+                        text = "#${book.id}",
+                        color = LibraryColors.TextMuted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             Text(
                 text = book.title,
@@ -77,14 +94,16 @@ fun BookCard(
                 Text(
                     text = book.authorName ?: "مؤلف غير محدد",
                     color = LibraryColors.TealGlow,
-                    fontSize = 12.sp
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 book.deathDisplay?.let { death ->
                     Text("($death)", color = LibraryColors.AmberAccent, fontSize = 11.sp)
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
             HorizontalDivider(color = LibraryColors.BorderSubtle, thickness = 1.dp)
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -93,27 +112,36 @@ fun BookCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                val count = book.pages.size.takeIf { it > 0 } ?: book.pageCount ?: 0
                 Text(
-                    text = "${book.pages.size.takeIf { it > 0 } ?: book.pageCount ?: 0} صفحة مفهرسة",
+                    text = "$count صفحة مفهرسة",
                     color = LibraryColors.TextMuted,
                     fontSize = 11.sp
                 )
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = null,
-                        tint = LibraryColors.GreenOffline,
-                        modifier = Modifier.size(14.dp)
-                    )
+                if (isDownloaded) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = LibraryColors.GreenOffline,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = "متاح بدون اتصال",
+                            color = LibraryColors.GreenOffline,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                } else {
                     Text(
-                        text = "متاح بدون اتصال",
-                        color = LibraryColors.GreenOffline,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold
+                        text = "فهرس",
+                        color = LibraryColors.TextMuted,
+                        fontSize = 11.sp
                     )
                 }
             }

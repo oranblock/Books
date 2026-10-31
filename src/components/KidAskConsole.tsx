@@ -164,46 +164,46 @@ export const KidAskConsole: React.FC<KidAskConsoleProps> = ({
   return (
     <div className="space-y-6 max-w-5xl mx-auto py-2">
       {/* Hero Header & Mode Switcher */}
-      <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-[#0d1516] to-[#080d0e] p-6 sm:p-8 relative overflow-hidden shadow-xl">
-        <div className="relative z-10 max-w-3xl space-y-4">
+      <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-[#0d1516] to-[#080d0e] p-4 sm:p-8 relative overflow-hidden shadow-xl">
+        <div className="relative z-10 max-w-3xl space-y-3.5 sm:space-y-4">
           {/* Engine Switcher (AI Gemini vs Local FTS) */}
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-1 p-1 bg-white/5 rounded-xl border border-white/10">
+          <div className="flex items-center justify-between flex-wrap gap-2 sm:gap-3">
+            <div className="flex items-center gap-1 p-1 bg-white/5 rounded-xl border border-white/10 w-full sm:w-auto">
               <button
                 onClick={() => {
                   setUseAiAssistant(true);
                   if (query) fetchAiAnswer(query);
                 }}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
+                className={`flex-1 sm:flex-initial px-2.5 sm:px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
                   useAiAssistant
                     ? 'bg-gradient-to-r from-teal-500 to-[#00898F] text-white shadow-sm'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                <Bot className="w-3.5 h-3.5" />
-                <span>المساعد الذكي AI (Gemini 3.8 Flash)</span>
+                <Bot className="w-3.5 h-3.5 shrink-0" />
+                <span>المساعد الذكي AI <span className="hidden sm:inline">(Gemini 3.8 Flash)</span></span>
               </button>
 
               <button
                 onClick={() => setUseAiAssistant(false)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
+                className={`flex-1 sm:flex-initial px-2.5 sm:px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
                   !useAiAssistant
                     ? 'bg-[#10b981] text-black shadow-sm'
                     : 'text-slate-400 hover:text-[#34d399]'
                 }`}
               >
-                <Zap className="w-3.5 h-3.5" />
-                <span>استرجاع FTS5 فوري (بدون إنترنت)</span>
+                <Zap className="w-3.5 h-3.5 shrink-0" />
+                <span>FTS5 فوري <span className="hidden sm:inline">(بدون إنترنت)</span></span>
               </button>
             </div>
 
-            <div className="text-[11px] font-mono text-emerald-400 flex items-center gap-1.5">
+            <div className="text-[10px] sm:text-[11px] font-mono text-emerald-400 flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span>{useAiAssistant ? 'نظام RAG + ذكاء اصطناعي نشط' : '100% يعمل محلياً دون اتصال'}</span>
+              <span>{useAiAssistant ? 'RAG + ذكاء اصطناعي نشط' : '100% محلي دون اتصال'}</span>
             </div>
           </div>
 
-          <h2 className="text-2xl sm:text-3xl font-bold text-white font-['Noto_Naskh_Arabic'] leading-relaxed">
+          <h2 className="text-xl sm:text-3xl font-bold text-white font-['Noto_Naskh_Arabic'] leading-relaxed">
             ماذا يقول الإمام السجاد (ع) عن...؟
           </h2>
 
@@ -218,7 +218,7 @@ export const KidAskConsole: React.FC<KidAskConsoleProps> = ({
           {/* Search Box */}
           <div className="pt-1">
             <div className="relative flex items-center">
-              <Search className="w-5 h-5 absolute right-4 text-[#00b4bc] pointer-events-none" />
+              <Search className="w-4 h-4 sm:w-5 sm:h-5 absolute right-3.5 sm:right-4 text-[#00b4bc] pointer-events-none" />
               <input
                 type="text"
                 value={query}
@@ -228,17 +228,17 @@ export const KidAskConsole: React.FC<KidAskConsoleProps> = ({
                     fetchAiAnswer(query);
                   }
                 }}
-                placeholder="اكتب سؤالاً أو موضوعاً: ماذا يقول الإمام عن الصبر؟ أو اكتب 'الوالدين'..."
-                className="w-full text-base sm:text-lg py-3.5 pr-12 pl-28 rounded-xl border border-white/15 bg-[#162224]/80 text-white placeholder-slate-400 focus:outline-none focus:border-[#00898F] focus:ring-1 focus:ring-[#00898F] shadow-inner transition-all font-['Noto_Naskh_Arabic']"
+                placeholder="اكتب سؤالاً: ماذا يقول الإمام عن الصبر؟ أو اكتب 'الوالدين'..."
+                className="w-full text-sm sm:text-lg py-3 sm:py-3.5 pr-10 sm:pr-12 pl-24 sm:pl-28 rounded-xl border border-white/15 bg-[#162224]/80 text-white placeholder-slate-400 focus:outline-none focus:border-[#00898F] focus:ring-1 focus:ring-[#00898F] shadow-inner transition-all font-['Noto_Naskh_Arabic']"
               />
-              <div className="absolute left-3 flex items-center gap-1.5">
+              <div className="absolute left-2 sm:left-3 flex items-center gap-1 sm:gap-1.5">
                 {query && (
                   <button
                     onClick={() => {
                       setQuery('');
                       setAiResult(null);
                     }}
-                    className="px-2 py-1 text-xs text-slate-400 hover:text-white rounded bg-white/5 hover:bg-white/10"
+                    className="px-1.5 sm:px-2 py-1 text-[11px] sm:text-xs text-slate-400 hover:text-white rounded bg-white/5 hover:bg-white/10"
                   >
                     مسح
                   </button>
@@ -247,7 +247,7 @@ export const KidAskConsole: React.FC<KidAskConsoleProps> = ({
                   <button
                     onClick={() => fetchAiAnswer(query)}
                     disabled={isAiLoading || !query.trim()}
-                    className="px-3 py-1.5 bg-[#00898F] hover:bg-[#00b4bc] hover:text-[#030707] text-white text-xs font-semibold rounded-lg transition-all disabled:opacity-40 flex items-center gap-1"
+                    className="px-2.5 sm:px-3 py-1 sm:py-1.5 bg-[#00898F] hover:bg-[#00b4bc] hover:text-[#030707] text-white text-[11px] sm:text-xs font-semibold rounded-lg transition-all disabled:opacity-40 flex items-center gap-1"
                   >
                     {isAiLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span>اسأل AI</span>}
                   </button>
@@ -257,8 +257,8 @@ export const KidAskConsole: React.FC<KidAskConsoleProps> = ({
           </div>
 
           {/* Quick-Prompt Buttons */}
-          <div className="pt-1 flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-slate-400">أسئلة مقترحة:</span>
+          <div className="pt-1 flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+            <span className="text-[11px] sm:text-xs text-slate-400 shrink-0">أسئلة مقترحة:</span>
             {POPULAR_QUESTIONS.map((q, idx) => (
               <button
                 key={idx}
@@ -266,7 +266,7 @@ export const KidAskConsole: React.FC<KidAskConsoleProps> = ({
                   setQuery(q.keyword);
                   if (useAiAssistant) fetchAiAnswer(q.keyword);
                 }}
-                className={`text-xs py-1 px-3 rounded-lg border transition-all cursor-pointer ${
+                className={`text-xs py-1 px-2.5 sm:px-3 rounded-lg border transition-all cursor-pointer shrink-0 whitespace-nowrap active:scale-95 ${
                   query === q.keyword
                     ? 'bg-[#00898F] text-white border-transparent font-medium shadow-sm'
                     : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:text-white'
@@ -339,21 +339,21 @@ ORDER BY rank LIMIT 5;`}
           ) : aiResult ? (
             <article className="rounded-2xl border border-teal-500/40 bg-gradient-to-b from-[#0d1617] to-[#0a1011] p-6 space-y-5 shadow-lg relative overflow-hidden">
               {/* Header */}
-              <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-white/10 pb-4">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-500/20 text-[#00b4bc] flex items-center gap-1">
                       <Sparkles className="w-3 h-3" />
                       <span>إجابة المساعد الذكي AI</span>
                     </span>
-                    <span className="text-xs text-slate-400 font-mono">Gemini 3.8 Flash</span>
+                    <span className="text-[11px] sm:text-xs text-slate-400 font-mono">Gemini 3.8 Flash</span>
                   </div>
-                  <h3 className="text-xl font-bold text-white font-['Noto_Naskh_Arabic'] leading-relaxed">
+                  <h3 className="text-lg sm:text-xl font-bold text-white font-['Noto_Naskh_Arabic'] leading-relaxed">
                     {aiResult.title}
                   </h3>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
                   <button
                     onClick={() =>
                       togglePlayAudio(
@@ -361,7 +361,7 @@ ORDER BY rank LIMIT 5;`}
                         `${aiResult.title}. ${aiResult.summary}. ومن كلام الإمام: ${aiResult.directQuote}. والتطبيق العملي: ${aiResult.practicalLesson}`
                       )
                     }
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all active:scale-95 ${
                       isPlayingAudio === 'ai-answer'
                         ? 'bg-amber-500 text-black border-amber-600'
                         : 'bg-white/5 hover:bg-white/10 text-slate-200 border-white/10'
@@ -382,7 +382,7 @@ ORDER BY rank LIMIT 5;`}
                         `${aiResult.title}\n\n${aiResult.summary}\n\nالشاهد: ${aiResult.directQuote}\n\nالتطبيق العملي: ${aiResult.practicalLesson}`
                       )
                     }
-                    className="p-2 rounded-lg border border-white/10 text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+                    className="p-2 rounded-lg border border-white/10 text-slate-300 hover:text-white hover:bg-white/10 transition-colors active:scale-95"
                     title="نسخ الإجابة"
                   >
                     {copiedId === 'ai-copy' ? (
@@ -518,9 +518,9 @@ ORDER BY rank LIMIT 5;`}
             return (
               <article
                 key={hit.pageNumber}
-                className="rounded-2xl border border-white/10 bg-[#0d1516] p-5 space-y-3 hover:border-[#00898F]/40 transition-all shadow-sm"
+                className="rounded-2xl border border-white/10 bg-[#0d1516] p-4 sm:p-5 space-y-3 hover:border-[#00898F]/40 transition-all shadow-sm"
               >
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5 sm:gap-3">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-amber-400 font-mono text-xs tabular-nums font-semibold">
@@ -529,12 +529,12 @@ ORDER BY rank LIMIT 5;`}
                       <span className="text-slate-500 text-[11px]">كتاب #5586</span>
                     </div>
 
-                    <h4 className="text-base sm:text-lg font-bold text-white font-['Noto_Naskh_Arabic']">
+                    <h4 className="text-sm sm:text-lg font-bold text-white font-['Noto_Naskh_Arabic']">
                       {hit.heading || 'دعاء من الصحيفة السجادية'}
                     </h4>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
                     <button
                       onClick={() =>
                         togglePlayAudio(
@@ -542,7 +542,7 @@ ORDER BY rank LIMIT 5;`}
                           `${hit.heading}. ${hit.snippet}`
                         )
                       }
-                      className={`p-1.5 rounded-lg border text-xs flex items-center gap-1 transition-all ${
+                      className={`p-2 sm:p-1.5 rounded-lg border text-xs flex items-center gap-1 transition-all active:scale-95 ${
                         isPlaying
                           ? 'bg-amber-500 text-black border-amber-600'
                           : 'bg-white/5 hover:bg-white/10 text-slate-200 border-white/10'
@@ -554,7 +554,7 @@ ORDER BY rank LIMIT 5;`}
 
                     <button
                       onClick={() => handleCopySnippet(`fts-${hit.pageNumber}`, hit.snippet)}
-                      className="p-1.5 rounded-lg border border-white/10 text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+                      className="p-2 sm:p-1.5 rounded-lg border border-white/10 text-slate-300 hover:text-white hover:bg-white/10 transition-colors active:scale-95"
                       title="نسخ الشاهد"
                     >
                       {copiedId === `fts-${hit.pageNumber}` ? (
@@ -566,7 +566,7 @@ ORDER BY rank LIMIT 5;`}
 
                     <button
                       onClick={() => onOpenReaderAtPage(hit.pageNumber)}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#00898F] hover:bg-[#00b4bc] hover:text-[#030707] text-white text-xs font-bold transition-all"
+                      className="flex items-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg bg-[#00898F] hover:bg-[#00b4bc] hover:text-[#030707] text-white text-xs font-bold transition-all active:scale-95"
                     >
                       <BookOpen className="w-3.5 h-3.5" />
                       <span>فتح الصفحة</span>
@@ -574,7 +574,7 @@ ORDER BY rank LIMIT 5;`}
                   </div>
                 </div>
 
-                <div className="p-3.5 rounded-xl bg-black/40 border border-white/5 font-['Amiri'] text-base md:text-lg leading-relaxed text-slate-200 text-justify">
+                <div className="p-3 sm:p-3.5 rounded-xl bg-black/40 border border-white/5 font-['Amiri'] text-base md:text-lg leading-relaxed text-slate-200 text-justify">
                   {hit.snippet}
                 </div>
               </article>

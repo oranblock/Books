@@ -1,0 +1,114 @@
+CREATE TABLE BookEntity (
+    id INTEGER PRIMARY KEY NOT NULL,
+    title TEXT NOT NULL,
+    volumeLabel TEXT,
+    volumeNumber INTEGER,
+    pageCount INTEGER,
+    categoryName TEXT,
+    categoryId INTEGER,
+    authorName TEXT,
+    authorEra TEXT,
+    deathDisplay TEXT,
+    publisherName TEXT,
+    printery TEXT,
+    printYear INTEGER,
+    abstract TEXT,
+    isDownloaded INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE BookPageEntity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bookId INTEGER NOT NULL,
+    pageNumber INTEGER NOT NULL,
+    pageLabel TEXT NOT NULL,
+    heading TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL
+);
+
+CREATE INDEX idx_pages_book_page ON BookPageEntity(bookId, pageNumber);
+
+CREATE TABLE BookmarkEntity (
+    bookId INTEGER NOT NULL,
+    bookTitle TEXT NOT NULL,
+    pageNumber INTEGER NOT NULL,
+    pageLabel TEXT NOT NULL,
+    heading TEXT,
+    note TEXT,
+    createdAt TEXT NOT NULL,
+    PRIMARY KEY (bookId, pageNumber)
+);
+
+CREATE TABLE PreferencesEntity (
+    key TEXT PRIMARY KEY NOT NULL,
+    value TEXT NOT NULL
+);
+
+-- Book Queries
+selectAllBooks:
+SELECT * FROM BookEntity ORDER BY id ASC;
+
+selectBookById:
+SELECT * FROM BookEntity WHERE id = :id LIMIT 1;
+
+insertOrReplaceBook:
+INSERT OR REPLACE INTO BookEntity (
+    id, title, volumeLabel, volumeNumber, pageCount,
+    categoryName, categoryId, authorName, authorEra, deathDisplay,
+    publisherName, printery, printYear, abstract, isDownloaded
+) VALUES (
+    :id, :title, :volumeLabel, :volumeNumber, :pageCount,
+    :categoryName, :categoryId, :authorName, :authorEra, :deathDisplay,
+    :publisherName, :printery, :printYear, :abstract, :isDownloaded
+);
+
+deleteBook:
+DELETE FROM BookEntity WHERE id = :id;
+
+-- Page Queries
+selectPagesForBook:
+SELECT * FROM BookPageEntity WHERE bookId = :bookId ORDER BY pageNumber ASC;
+
+selectPage:
+SELECT * FROM BookPageEntity WHERE bookId = :bookId AND pageNumber = :pageNumber LIMIT 1;
+
+insertPage:
+INSERT OR REPLACE INTO BookPageEntity (bookId, pageNumber, pageLabel, heading, content)
+VALUES (:bookId, :pageNumber, :pageLabel, :heading, :content);
+
+deletePagesForBook:
+DELETE FROM BookPageEntity WHERE bookId = :bookId;
+
+searchPagesInBook:
+SELECT * FROM BookPageEntity
+WHERE bookId = :bookId AND (content LIKE '%' || :query || '%' OR heading LIKE '%' || :query || '%')
+ORDER BY pageNumber ASC;
+
+countPagesForBook:
+SELECT count(*) FROM BookPageEntity WHERE bookId = :bookId;
+
+-- Bookmark Queries
+selectAllBookmarks:
+SELECT * FROM BookmarkEntity ORDER BY createdAt DESC;
+
+insertBookmark:
+INSERT OR REPLACE INTO BookmarkEntity (bookId, bookTitle, pageNumber, pageLabel, heading, note, createdAt)
+VALUES (:bookId, :bookTitle, :pageNumber, :pageLabel, :heading, :note, :createdAt);
+
+deleteBookmark:
+DELETE FROM BookmarkEntity WHERE bookId = :bookId AND pageNumber = :pageNumber;
+
+updateBookmarkNote:
+UPDATE BookmarkEntity SET note = :note WHERE bookId = :bookId AND pageNumber = :pageNumber;
+
+-- Preferences Queries
+getPreference:
+SELECT value FROM PreferencesEntity WHERE key = :key LIMIT 1;
+
+setPreference:
+INSERT OR REPLACE INTO PreferencesEntity (key, value) VALUES (:key, :value);
+
+clearAllData:
+DELETE FROM BookEntity;
+DELETE FROM BookPageEntity;
+DELETE FROM BookmarkEntity;
+DELETE FROM PreferencesEntity;

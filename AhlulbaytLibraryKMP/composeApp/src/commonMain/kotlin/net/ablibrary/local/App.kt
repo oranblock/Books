@@ -20,24 +20,29 @@ fun App() {
         var selectedBook by remember { mutableStateOf<Book?>(null) }
         var selectedPage by remember { mutableStateOf(1) }
         var showBookmarksDialog by remember { mutableStateOf(false) }
+        var showImportDialog by remember { mutableStateOf(false) }
 
+        // Initial seeding if storage is empty
         LaunchedEffect(Unit) {
-            if (true) {
+            if (books.isEmpty()) {
                 try {
                     val json = Json { ignoreUnknownKeys = true; isLenient = true }
                     val loadedBooks = json.decodeFromString<List<Book>>(DefaultBooks.RAW_JSON)
                     if (loadedBooks.isNotEmpty()) {
                         storage.saveBooks(loadedBooks)
-                        books = loadedBooks
+                        books = storage.getBooks()
                     }
                 } catch (_: Exception) {}
             }
         }
 
         if (selectedBook != null) {
-            val isBm = bookmarks.any { it.bookId == selectedBook!!.id && it.pageNumber == selectedPage }
+            val book = selectedBook!!
+            val currentBookmark = bookmarks.find { it.bookId == book.id && it.pageNumber == selectedPage }
+            val isBm = currentBookmark != null
+
             ReaderScreen(
-                book = selectedBook!!,
+                book = book,
                 initialPage = selectedPage,
                 preferences = preferences,
                 onPreferencesChange = {
@@ -45,9 +50,18 @@ fun App() {
                     storage.savePreferences(it)
                 },
                 onBookmarkToggle = { bm ->
-                    if (isBm) storage.removeBookmark(bm.bookId, bm.pageNumber) else storage.addBookmark(bm)
+                    if (isBm) {
+                        storage.removeBookmark(bm.bookId, bm.pageNumber)
+                    } else {
+                        storage.addBookmark(bm)
+                    }
                     bookmarks = storage.getBookmarks()
                 },
+                onSaveNote = { bId, pNum, note ->
+                    storage.updateBookmarkNote(bId, pNum, note)
+                    bookmarks = storage.getBookmarks()
+                },
+                currentBookmark = currentBookmark,
                 isBookmarked = isBm,
                 onClose = { selectedBook = null }
             )
@@ -57,20 +71,24 @@ fun App() {
                 bookmarkCount = bookmarks.size,
                 activeTab = activeTab,
                 onTabChange = { activeTab = it },
-                onBookClick = {
-                    selectedBook = it
+                onBookClick = { book ->
+                    val full = storage.getFullBook(book.id) ?: book
+                    selectedBook = full
                     selectedPage = 1
                 },
                 onOpenBookmarks = { showBookmarksDialog = true },
+                onOpenImport = { showImportDialog = true },
                 onOpenKidConsolePage = { pageNum ->
                     val sahifa = books.find { it.id == 5586L } ?: books.firstOrNull()
                     if (sahifa != null) {
-                        selectedBook = sahifa
+                        val full = storage.getFullBook(sahifa.id) ?: sahifa
+                        selectedBook = full
                         selectedPage = pageNum
                     }
                 }
             )
 
+            // Bookmarks & Notes Dialog
             if (showBookmarksDialog) {
                 BookmarksDialog(
                     bookmarks = bookmarks,
@@ -78,7 +96,8 @@ fun App() {
                         val b = books.find { it.id == bId }
                         if (b != null) {
                             showBookmarksDialog = false
-                            selectedBook = b
+                            val full = storage.getFullBook(b.id) ?: b
+                            selectedBook = full
                             selectedPage = pNum
                         }
                     },
@@ -86,7 +105,30 @@ fun App() {
                         storage.removeBookmark(bId, pNum)
                         bookmarks = storage.getBookmarks()
                     },
+                    onUpdateNote = { bId, pNum, note ->
+                        storage.updateBookmarkNote(bId, pNum, note)
+                        bookmarks = storage.getBookmarks()
+                    },
                     onDismiss = { showBookmarksDialog = false }
+                )
+            }
+
+            // Import Book Dialog
+            if (showImportDialog) {
+                ImportDialog(
+                    books = books,
+                    defaultBookId = 5586L,
+                    onImportSuccess = { bookId, importedPages, title ->
+                        val updated = storage.importPagesIntoBook(
+                            bookId = bookId,
+                            newPages = importedPages,
+                            customTitle = title
+                        )
+                        books = storage.getBooks()
+                        selectedBook = updated
+                        selectedPage = 1
+                    },
+                    onDismiss = { showImportDialog = false }
                 )
             }
         }

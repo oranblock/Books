@@ -9,6 +9,7 @@ import {
   X,
   Layers,
   Sparkles,
+  Download,
 } from 'lucide-react';
 
 interface AboutModalProps {
@@ -23,33 +24,33 @@ export const AboutModal: React.FC<AboutModalProps> = ({
   onResetFactory,
 }) => {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
-      <div className="bg-[#0d1516] border border-white/10 rounded-2xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl text-slate-200 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
+      <div className="bg-[#0d1516] border border-white/10 rounded-2xl max-w-2xl w-full max-h-[92dvh] flex flex-col shadow-2xl text-slate-200 overflow-hidden">
         {/* Header */}
-        <header className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-[#162224]/50">
+        <header className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-white/10 flex items-center justify-between bg-[#162224]/50 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-[#00898F]/20 flex items-center justify-center text-[#00b4bc]">
+            <div className="w-8 h-8 rounded-lg bg-[#00898F]/20 flex items-center justify-center text-[#00b4bc] shrink-0">
               <HelpCircle className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white font-['Noto_Naskh_Arabic']">
+              <h2 className="text-sm sm:text-base font-bold text-white font-['Noto_Naskh_Arabic']">
                 حول مكتبة أهل البيت (ع) - النسخة المحلية
               </h2>
-              <p className="text-xs text-slate-400">
+              <p className="text-[11px] sm:text-xs text-slate-400">
                 محرك بحث وقراءة للمخطوطات والكتب التراثية يعمل 100% بدون إنترنت
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </header>
 
         {/* Body */}
-        <div className="p-6 overflow-y-auto space-y-5 flex-1 text-xs leading-relaxed">
+        <div className="p-3.5 sm:p-6 overflow-y-auto space-y-4 sm:space-y-5 flex-1 text-xs leading-relaxed">
           <div className="space-y-3">
             <h3 className="text-sm font-bold text-white flex items-center gap-1.5 font-['Noto_Naskh_Arabic']">
               <BookOpen className="w-4 h-4 text-[#00b4bc]" />
@@ -97,6 +98,23 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                 </span>
               </li>
             </ul>
+          </div>
+
+          <div className="pt-2 border-t border-white/10 flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <span className="font-semibold text-white block">مشروع تطبيق الهواتف المحمولة (KMP Android & iOS):</span>
+              <span className="text-slate-400 text-[11px]">
+                مشروع Kotlin Multiplatform + Compose مكتمل لنظامي Android و iOS مع Xcode Project و Gradle.
+              </span>
+            </div>
+            <a
+              href="/assets/aistudio/AhlulbaytLibraryKMP-Complete.zip"
+              download="AhlulbaytLibraryKMP-Complete.zip"
+              className="px-3.5 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/40 transition-colors flex items-center gap-1.5 font-medium"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>تحميل مشروع KMP كاملاً (.zip)</span>
+            </a>
           </div>
 
           <div className="pt-2 border-t border-white/10 flex items-center justify-between flex-wrap gap-2">

@@ -301,62 +301,64 @@ export default function App() {
       />
 
       {/* Operational Utility / Mode Switcher Ribbon */}
-      <div className="bg-[#0a1012] border-b border-white/10 px-4 md:px-8 py-2.5">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4 flex-wrap">
+      <div className="bg-[#0a1012] border-b border-white/10 px-3 sm:px-6 md:px-8 py-2 sm:py-2.5">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4 overflow-x-auto no-scrollbar">
           {/* Segmented Mode Selector */}
-          <div className="flex items-center gap-1 p-1 bg-white/5 rounded-xl border border-white/5">
+          <div className="flex items-center gap-1 p-1 bg-white/5 rounded-xl border border-white/5 shrink-0">
             <button
               onClick={() => setActiveTab('catalog')}
-              className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
+              className={`px-3 sm:px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 activeTab === 'catalog'
-                  ? 'bg-[#00898F] text-white shadow-sm'
+                  ? 'bg-[#00898F] text-white shadow-xs'
                   : 'text-slate-300 hover:text-white hover:bg-white/5'
               }`}
             >
-              <BookOpen className="w-3.5 h-3.5" />
+              <BookOpen className="w-3.5 h-3.5 shrink-0" />
               <span>فهرس الكتب</span>
             </button>
 
             <button
               onClick={() => setActiveTab('ask_imam')}
-              className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
+              className={`px-3 sm:px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 activeTab === 'ask_imam'
-                  ? 'bg-amber-500 text-black shadow-sm'
+                  ? 'bg-amber-500 text-black shadow-xs font-bold'
                   : 'text-amber-300 hover:bg-amber-500/10'
               }`}
             >
-              <Smile className="w-3.5 h-3.5" />
-              <span>اسأل عن الصبر والهم والوالدين (للأطفال والناشئة)</span>
+              <Smile className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">اسأل عن الصبر والهم (للأطفال والناشئة)</span>
+              <span className="sm:hidden">اسأل الإمام</span>
             </button>
 
             <button
               onClick={() => setActiveTab('offline')}
-              className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
+              className={`px-3 sm:px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 activeTab === 'offline'
-                  ? 'bg-[#10b981] text-black shadow-sm'
+                  ? 'bg-[#10b981] text-black shadow-xs font-bold'
                   : 'text-slate-300 hover:text-[#34d399] hover:bg-white/5'
               }`}
             >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>المتاحة بدون اتصال ({offlineCount})</span>
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              <span>المتاحة محلياً ({offlineCount})</span>
             </button>
           </div>
 
           {/* Quick Technical Architecture Button */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => setShowArchitectureModal(true)}
-              className="text-xs text-[#00b4bc] hover:text-white px-3 py-1.5 rounded-lg border border-[#00898F]/30 hover:bg-[#00898F]/20 transition-colors flex items-center gap-1.5"
+              className="text-xs text-[#00b4bc] hover:text-white px-2.5 sm:px-3 py-1.5 rounded-lg border border-[#00898F]/30 hover:bg-[#00898F]/20 transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
             >
-              <Layers className="w-3.5 h-3.5" />
-              <span>مخطط Cactus + RAG + SQLite</span>
+              <Layers className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">مخطط Cactus + RAG + SQLite</span>
+              <span className="sm:hidden">المعمارية</span>
             </button>
           </div>
         </div>
       </div>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-8 py-6 space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 md:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6 pb-20 md:pb-8">
         {/* TAB 1: ASK THE IMAM (Child & Family FTS Search Console) */}
         {activeTab === 'ask_imam' ? (
           sahifaBook ? (
@@ -367,7 +369,7 @@ export default function App() {
               }}
             />
           ) : (
-            <div className="text-center py-20">جاري تحميل بيانات الصحيفة السجادية...</div>
+            <div className="text-center py-20 text-slate-400">جاري تحميل بيانات الصحيفة السجادية...</div>
           )
         ) : (
           /* TAB 2 & 3: CATALOG & OFFLINE BOOKS VIEW */
@@ -477,7 +479,7 @@ export default function App() {
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
                 {filteredBooks.map((book) => (
                   <BookCard
                     key={book.id}
@@ -499,6 +501,61 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Mobile Sticky Bottom Navigation Bar */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-[#0d1516]/95 backdrop-blur-md border-t border-white/10 px-2 py-1.5 flex items-center justify-around text-[10px]">
+        <button
+          onClick={() => setActiveTab('catalog')}
+          className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-lg transition-colors cursor-pointer ${
+            activeTab === 'catalog' ? 'text-[#00b4bc] font-bold' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <BookOpen className="w-4 h-4" />
+          <span>الفهرس</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('ask_imam')}
+          className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-lg transition-colors cursor-pointer ${
+            activeTab === 'ask_imam' ? 'text-amber-400 font-bold' : 'text-slate-400 hover:text-amber-300'
+          }`}
+        >
+          <Smile className="w-4 h-4" />
+          <span>اسأل الإمام</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('offline')}
+          className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-lg transition-colors cursor-pointer ${
+            activeTab === 'offline' ? 'text-[#34d399] font-bold' : 'text-slate-400 hover:text-[#34d399]'
+          }`}
+        >
+          <div className="relative">
+            <CheckCircle2 className="w-4 h-4" />
+            {offlineCount > 0 && (
+              <span className="absolute -top-1 -right-2 bg-[#10b981] text-black text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">
+                {offlineCount}
+              </span>
+            )}
+          </div>
+          <span>المحمّلة</span>
+        </button>
+
+        <button
+          onClick={() => setShowBookmarksModal(true)}
+          className="flex flex-col items-center gap-0.5 py-1 px-3 rounded-lg text-slate-400 hover:text-amber-300 transition-colors cursor-pointer"
+        >
+          <div className="relative">
+            <Bookmark className="w-4 h-4 text-amber-400" />
+            {bookmarks.length > 0 && (
+              <span className="absolute -top-1 -right-2 bg-amber-500 text-black text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">
+                {bookmarks.length}
+              </span>
+            )}
+          </div>
+          <span>الإشارات</span>
+        </button>
+      </nav>
 
       {/* Reader Modal */}
       {activeBookForReader && (

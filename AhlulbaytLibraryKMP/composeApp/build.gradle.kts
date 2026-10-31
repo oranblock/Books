@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinSerialization)
+    alias(libs.plugins.sqldelight)
 }
 
 kotlin {
@@ -32,9 +33,23 @@ kotlin {
             implementation(libs.navigation.compose)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.multiplatform.settings)
+            implementation(libs.sqldelight.coroutines)
+            implementation(libs.sqldelight.primitive.adapters)
         }
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
+            implementation(libs.sqldelight.android)
+        }
+        iosMain.dependencies {
+            implementation(libs.sqldelight.native)
+        }
+    }
+}
+
+sqldelight {
+    databases {
+        create("AhlulbaytDatabase") {
+            packageName.set("net.ablibrary.local.db")
         }
     }
 }
