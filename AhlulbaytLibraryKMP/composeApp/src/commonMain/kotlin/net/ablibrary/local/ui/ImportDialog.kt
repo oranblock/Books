@@ -5,28 +5,34 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import kotlinx.coroutines.launch
 import net.ablibrary.local.model.Book
 import net.ablibrary.local.model.BookPage
+import net.ablibrary.local.net.RemoteBookFetcher
 import net.ablibrary.local.utils.TextParser
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ImportDialog(
     books: List<Book>,
     defaultBookId: Long = 5586L,
-    onImportSuccess: (Long, List<BookPage>, String?) -> Unit,
+    onImport: (Long, List<BookPage>, String?) -> Unit,
     onDismiss: () -> Unit
 ) {
     var selectedBookId by remember { mutableStateOf(defaultBookId) }
@@ -34,6 +40,10 @@ fun ImportDialog(
     var newBookTitle by remember { mutableStateOf("") }
     var newBookAuthor by remember { mutableStateOf("") }
     var rawText by remember { mutableStateOf("") }
+    var isFetchingRemote by remember { mutableStateOf(false) }
+    var remoteStatusMessage by remember { mutableStateOf<String?>(null) }
+
+    val coroutineScope = rememberCoroutineScope()
 
     val parseResult = remember(rawText) {
         if (rawText.isBlank()) null
@@ -43,11 +53,29 @@ fun ImportDialog(
     val pages = parseResult?.first ?: emptyList()
     val detectedFormat = parseResult?.second ?: ""
 
+    fun handleRemoteFetch() {
+        isFetchingRemote = true
+        remoteStatusMessage = null
+        coroutineScope.launch {
+            val res = RemoteBookFetcher.fetchBookPages(selectedBookId)
+            isFetchingRemote = false
+            res.onSuccess { fetchedPages ->
+                remoteStatusMessage = "تم جلب ${fetchedPages.size} صفحة بنجاح من خادم المكتبة!"
+                val targetBook = books.find { it.id == selectedBookId }
+                onImport(selectedBookId, fetchedPages, if (isNewBook) newBookTitle else targetBook?.title)
+                onDismiss()
+            }
+            res.onFailure { err ->
+                remoteStatusMessage = err.message ?: "تعذر الجلب التلقائي عن بعد"
+            }
+        }
+    }
+
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.88f)
+                .fillMaxHeight(0.92f)
                 .clip(RoundedCornerShape(16.dp)),
             color = LibraryColors.SurfaceDark
         ) {
@@ -82,20 +110,20 @@ fun ImportDialog(
                         }
                         Column {
                             Text(
-                                "استيراد وتحويل كتاب محلي",
+                                "استيراد وتحميل كتاب",
                                 color = LibraryColors.TextWhite,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                "يدعم contents_full.json و sahifa_5586.txt و XML",
+                                "دعم الجلب عن بعد (Connect-RPC) وملفات JSON/TXT",
                                 color = LibraryColors.TextMuted,
                                 fontSize = 10.sp
                             )
                         }
                     }
                     TextButton(onClick = onDismiss) {
-                        Text("إلغاء", color = LibraryColors.TextMuted)
+                        Text("إغلاق", color = LibraryColors.TextMuted)
                     }
                 }
 
@@ -109,7 +137,7 @@ fun ImportDialog(
                 ) {
                     // Target selector
                     item {
-                        Text("الهدف المراد الاستيراد إليه:", color = LibraryColors.TextWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("الهدف المراد التحميل أو الاستيراد إليه:", color = LibraryColors.TextWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -152,6 +180,45 @@ fun ImportDialog(
                                     }
                                 }
                             }
+
+                            // Remote fetch direct trigger
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(LibraryColors.TealPrimary.copy(alpha = 0.12f))
+                                    .border(1.dp, LibraryColors.TealPrimary.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                                    .padding(12.dp)
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("الجلب الآلي عن بعد (Connect-RPC):", color = LibraryColors.TealGlow, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text("تحميل صفحات الكتاب #${selectedBookId} مباشرة من خادم شبكة أهل البيت وحفظها في SQLite محلياً.", color = LibraryColors.TextMuted, fontSize = 10.sp)
+
+                                    Button(
+                                        onClick = { handleRemoteFetch() },
+                                        enabled = !isFetchingRemote,
+                                        colors = ButtonDefaults.buttonColors(containerColor = LibraryColors.TealPrimary),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                        modifier = Modifier.fillMaxWidth().height(36.dp)
+                                    ) {
+                                        if (isFetchingRemote) {
+                                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("جاري الاتصال والتحميل...", fontSize = 12.sp)
+                                        } else {
+                                            Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("بدء التحميل عن بعد الآن", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+
+                                    remoteStatusMessage?.let { msg ->
+                                        Text(msg, color = if (msg.contains("نجاح")) LibraryColors.GreenOffline else LibraryColors.AmberAccent, fontSize = 11.sp)
+                                    }
+                                }
+                            }
                         } else {
                             OutlinedTextField(
                                 value = newBookTitle,
@@ -171,16 +238,16 @@ fun ImportDialog(
                         }
                     }
 
-                    // Raw text area
+                    // Raw text area for manual import
                     item {
-                        Text("ألصق محتوى الملف هنا (JSON / TXT / XML):", color = LibraryColors.TextWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("أو ألصق محتوى الملف يدوياً (JSON / TXT / XML):", color = LibraryColors.TextWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(4.dp))
                         OutlinedTextField(
                             value = rawText,
                             onValueChange = { rawText = it },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(160.dp),
+                                .height(140.dp),
                             placeholder = {
                                 Text(
                                     "ألصق نصوص contents_full.json أو sahifa_5586.txt مباشرة...",
@@ -218,9 +285,10 @@ fun ImportDialog(
                                     if (pages.isNotEmpty()) {
                                         val first = pages.first()
                                         Text(
-                                            "عينة ص ${first.pageNumber}: ${first.heading.ifBlank { first.content.take(60) }}…",
+                                            "عينة من ص 1: ${first.heading.ifBlank { first.content.take(60) }}",
                                             color = LibraryColors.TextMuted,
-                                            fontSize = 11.sp
+                                            fontSize = 11.sp,
+                                            maxLines = 1
                                         )
                                     }
                                 }
@@ -229,25 +297,32 @@ fun ImportDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Actions
+                // Footer Actions
                 Button(
                     onClick = {
-                        if (pages.isNotEmpty()) {
-                            val targetId = if (isNewBook) {
-                                (books.maxOfOrNull { it.id } ?: 9000L) + 1
-                            } else selectedBookId
-                            val title = if (isNewBook) newBookTitle.ifBlank { "كتاب مستورد" } else null
-                            onImportSuccess(targetId, pages, title)
-                            onDismiss()
-                        }
+                        val targetId = if (isNewBook) {
+                            (books.maxOfOrNull { it.id } ?: 9000L) + 1
+                        } else selectedBookId
+
+                        val customTitle = if (isNewBook) newBookTitle.ifBlank { "كتاب مستورد جديد" } else null
+                        onImport(targetId, pages, customTitle)
+                        onDismiss()
                     },
                     enabled = pages.isNotEmpty(),
-                    colors = ButtonDefaults.buttonColors(containerColor = LibraryColors.TealPrimary),
-                    modifier = Modifier.fillMaxWidth()
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = LibraryColors.TealPrimary,
+                        disabledContainerColor = LibraryColors.TealPrimary.copy(alpha = 0.3f)
+                    ),
+                    modifier = Modifier.fillMaxWidth().height(42.dp),
+                    shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("تنفيذ الاستيراد وحفظ ${pages.size} صفحة محلياً", fontWeight = FontWeight.Bold)
+                    Text(
+                        if (pages.isEmpty()) "ألصق ملفاً صالحاً أولاً" else "حفظ واستيراد ${pages.size} صفحة إلى المكتبة",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }

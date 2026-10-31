@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.EditNote
@@ -23,6 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import kotlinx.coroutines.launch
+import net.ablibrary.local.ai.GeminiAiAssistant
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -62,7 +65,11 @@ fun ReaderScreen(
     var showInPageSearch by remember { mutableStateOf(false) }
     var inPageQuery by remember { mutableStateOf("") }
     var noteInput by remember { mutableStateOf("") }
+    var showAiExplainDialog by remember { mutableStateOf(false) }
+    var aiExplanation by remember { mutableStateOf("") }
+    var isAiExplaining by remember { mutableStateOf(false) }
 
+    val coroutineScope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
     val scrollState = rememberScrollState()
 
@@ -112,6 +119,20 @@ fun ReaderScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = {
+                        isAiExplaining = true
+                        showAiExplainDialog = true
+                        coroutineScope.launch {
+                            aiExplanation = GeminiAiAssistant.explainPage(
+                                pageNumber = currentPage.pageNumber,
+                                heading = currentPage.heading,
+                                content = currentPage.content
+                            )
+                            isAiExplaining = false
+                        }
+                    }) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = "شرح الصفحة بالذكاء الاصطناعي", tint = LibraryColors.TealGlow)
+                    }
                     IconButton(onClick = { showInPageSearch = !showInPageSearch }) {
                         Icon(Icons.Default.Search, contentDescription = "بحث في الكتاب", tint = textColor)
                     }
@@ -471,5 +492,49 @@ fun ReaderScreen(
                 }
             }
         }
+    }
+
+    // AI Page Explanation Dialog
+    if (showAiExplainDialog) {
+        AlertDialog(
+            onDismissRequest = { showAiExplainDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = LibraryColors.TealGlow)
+                    Text("شرح الصفحة بالذكاء الاصطناعي", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                if (isAiExplaining) {
+                    Box(modifier = Modifier.fillMaxWidth().height(140.dp), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CircularProgressIndicator(color = LibraryColors.TealGlow, modifier = Modifier.size(28.dp))
+                            Text("جاري استخراج التأملات والشرح التربوي...", fontSize = 12.sp, color = LibraryColors.TextWhite)
+                        }
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = aiExplanation,
+                            color = LibraryColors.TextWhite,
+                            fontSize = 13.sp,
+                            lineHeight = 22.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showAiExplainDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = LibraryColors.TealPrimary)
+                ) {
+                    Text("إغلاق")
+                }
+            },
+            containerColor = LibraryColors.SurfaceDark
+        )
     }
 }

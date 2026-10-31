@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,7 +24,9 @@ import net.ablibrary.local.model.Book
 fun BookCard(
     book: Book,
     onOpenReader: (Book) -> Unit,
-    onShowDetails: (Book) -> Unit = {}
+    onShowDetails: (Book) -> Unit = {},
+    isDownloading: Boolean = false,
+    onDownloadBook: (Book) -> Unit = {}
 ) {
     val isDownloaded = book.isDownloaded || book.pages.isNotEmpty()
 
@@ -138,11 +141,35 @@ fun BookCard(
                         )
                     }
                 } else {
-                    Text(
-                        text = "فهرس",
-                        color = LibraryColors.TextMuted,
-                        fontSize = 11.sp
-                    )
+                    Button(
+                        onClick = { onDownloadBook(book) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = LibraryColors.TealPrimary.copy(alpha = 0.25f),
+                            contentColor = LibraryColors.TealGlow
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        enabled = !isDownloading,
+                        modifier = Modifier.height(30.dp)
+                    ) {
+                        if (isDownloading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp,
+                                color = LibraryColors.TealGlow
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("جاري الجلب...", fontSize = 11.sp)
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.CloudDownload,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("تحميل عن بعد", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
         }

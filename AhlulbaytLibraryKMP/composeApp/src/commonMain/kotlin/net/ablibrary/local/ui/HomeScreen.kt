@@ -37,7 +37,9 @@ fun HomeScreen(
     onBookClick: (Book) -> Unit,
     onOpenBookmarks: () -> Unit,
     onOpenImport: () -> Unit,
-    onOpenKidConsolePage: (Int) -> Unit
+    onOpenKidConsolePage: (Int) -> Unit,
+    downloadingBookIds: Set<Long> = emptySet(),
+    onDownloadBook: (Book) -> Unit = {}
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategoryId by remember { mutableStateOf(0) }
@@ -287,7 +289,9 @@ fun HomeScreen(
                                 BookCard(
                                     book = book,
                                     onOpenReader = onBookClick,
-                                    onShowDetails = { selectedBookForDetails = it }
+                                    onShowDetails = { selectedBookForDetails = it },
+                                    isDownloading = downloadingBookIds.contains(book.id),
+                                    onDownloadBook = onDownloadBook
                                 )
                             }
                         }

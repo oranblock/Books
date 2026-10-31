@@ -3,15 +3,19 @@ package net.ablibrary.local
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import net.ablibrary.local.data.DefaultBooks
 import net.ablibrary.local.model.*
+import net.ablibrary.local.net.RemoteBookFetcher
 import net.ablibrary.local.ui.*
 
 @Composable
 fun App() {
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         val storage = remember { LibraryStorage() }
+        val coroutineScope = rememberCoroutineScope()
+
         var preferences by remember { mutableStateOf(storage.getPreferences()) }
         var bookmarks by remember { mutableStateOf(storage.getBookmarks()) }
         var books by remember { mutableStateOf(storage.getBooks()) }
@@ -21,6 +25,7 @@ fun App() {
         var selectedPage by remember { mutableStateOf(1) }
         var showBookmarksDialog by remember { mutableStateOf(false) }
         var showImportDialog by remember { mutableStateOf(false) }
+        var downloadingBookIds by remember { mutableStateOf(setOf<Long>()) }
 
         // Initial seeding if storage is empty
         LaunchedEffect(Unit) {
@@ -73,8 +78,27 @@ fun App() {
                 onTabChange = { activeTab = it },
                 onBookClick = { book ->
                     val full = storage.getFullBook(book.id) ?: book
-                    selectedBook = full
-                    selectedPage = 1
+                    if (full.pages.isEmpty() && !downloadingBookIds.contains(book.id)) {
+                        // Automatically fetch if clicked and not downloaded
+                        downloadingBookIds = downloadingBookIds + book.id
+                        coroutineScope.launch {
+                            val res = RemoteBookFetcher.fetchBookPages(book.id)
+                            downloadingBookIds = downloadingBookIds - book.id
+                            res.onSuccess { fetchedPages ->
+                                val saved = storage.importPagesIntoBook(book.id, fetchedPages, book.title)
+                                books = storage.getBooks()
+                                selectedBook = saved
+                                selectedPage = 1
+                            }
+                            res.onFailure {
+                                selectedBook = full
+                                selectedPage = 1
+                            }
+                        }
+                    } else {
+                        selectedBook = full
+                        selectedPage = 1
+                    }
                 },
                 onOpenBookmarks = { showBookmarksDialog = true },
                 onOpenImport = { showImportDialog = true },
@@ -84,6 +108,18 @@ fun App() {
                         val full = storage.getFullBook(sahifa.id) ?: sahifa
                         selectedBook = full
                         selectedPage = pageNum
+                    }
+                },
+                downloadingBookIds = downloadingBookIds,
+                onDownloadBook = { book ->
+                    downloadingBookIds = downloadingBookIds + book.id
+                    coroutineScope.launch {
+                        val res = RemoteBookFetcher.fetchBookPages(book.id)
+                        downloadingBookIds = downloadingBookIds - book.id
+                        res.onSuccess { fetchedPages ->
+                            storage.importPagesIntoBook(book.id, fetchedPages, book.title)
+                            books = storage.getBooks()
+                        }
                     }
                 }
             )
@@ -118,7 +154,7 @@ fun App() {
                 ImportDialog(
                     books = books,
                     defaultBookId = 5586L,
-                    onImportSuccess = { bookId, importedPages, title ->
+                    onImport = { bookId, importedPages, title ->
                         val updated = storage.importPagesIntoBook(
                             bookId = bookId,
                             newPages = importedPages,
