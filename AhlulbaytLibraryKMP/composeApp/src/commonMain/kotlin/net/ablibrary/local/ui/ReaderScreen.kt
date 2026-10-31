@@ -1,5 +1,6 @@
 package net.ablibrary.local.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -10,13 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.EditNote
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,6 +22,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import kotlinx.coroutines.launch
 import net.ablibrary.local.ai.GeminiAiAssistant
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -60,6 +56,8 @@ fun ReaderScreen(
 
     var showSettingsSheet by remember { mutableStateOf(false) }
     var showTocDrawer by remember { mutableStateOf(false) }
+    var showSearchResultsDrawer by remember { mutableStateOf(false) }
+    var currentMatchIndex by remember { mutableStateOf(0) }
     var showJumpDialog by remember { mutableStateOf(false) }
     var showNoteDialog by remember { mutableStateOf(false) }
     var showInPageSearch by remember { mutableStateOf(false) }
@@ -88,8 +86,70 @@ fun ReaderScreen(
         ReaderTheme.LIGHT -> Triple(Color(0xFFF8FAFC), Color(0xFF0F172A), Color(0xFFFFFFFF))
     }
 
+    // In-book search matches across all pages
+    val qNorm = remember(inPageQuery) { TextParser.normalizeForSearch(inPageQuery) }
+    val searchMatches = remember(qNorm, book.pages) {
+        if (qNorm.isBlank()) emptyList<Triple<Int, BookPage, String>>()
+        else {
+            book.pages.mapIndexedNotNull { idx, page ->
+                val contentNorm = TextParser.normalizeForSearch(page.content)
+                val headingNorm = TextParser.normalizeForSearch(page.heading)
+                if (contentNorm.contains(qNorm) || headingNorm.contains(qNorm)) {
+                    val raw = page.content
+                    val normRaw = TextParser.stripTashkeel(raw)
+                    val matchIdx = normRaw.indexOf(qNorm, ignoreCase = true)
+                    val snippet = if (matchIdx >= 0) {
+                        val start = (matchIdx - 30).coerceAtLeast(0)
+                        val end = (matchIdx + qNorm.length + 45).coerceAtMost(raw.length)
+                        "..." + raw.substring(start, end).replace("\n", " ").trim() + "..."
+                    } else {
+                        page.content.take(75).replace("\n", " ").trim() + "..."
+                    }
+                    Triple(idx, page, snippet)
+                } else null
+            }
+        }
+    }
+
+    LaunchedEffect(searchMatches) {
+        if (searchMatches.isNotEmpty()) {
+            val existing = searchMatches.indexOfFirst { it.first == currentPageIndex }
+            currentMatchIndex = if (existing != -1) existing else 0
+        } else {
+            currentMatchIndex = 0
+        }
+    }
+
     val displayContent = remember(currentPage.content, preferences.removeTashkeel) {
         if (preferences.removeTashkeel) TextParser.stripTashkeel(currentPage.content) else currentPage.content
+    }
+
+    val highlightedContent = remember(displayContent, inPageQuery) {
+        if (inPageQuery.isBlank()) {
+            AnnotatedString(displayContent)
+        } else {
+            val normQuery = TextParser.normalizeForSearch(inPageQuery)
+            val builder = AnnotatedString.Builder()
+            val words = displayContent.split(Regex("(?<=\\s)|(?=\\s)"))
+            for (w in words) {
+                val normWord = TextParser.normalizeForSearch(w)
+                if (normQuery.isNotBlank() && normWord.contains(normQuery)) {
+                    val start = builder.length
+                    builder.append(w)
+                    builder.addStyle(
+                        SpanStyle(
+                            background = Color(0x77FFC107),
+                            fontWeight = FontWeight.Bold
+                        ),
+                        start,
+                        builder.length
+                    )
+                } else {
+                    builder.append(w)
+                }
+            }
+            builder.toAnnotatedString()
+        }
     }
 
     Scaffold(
@@ -229,31 +289,123 @@ fun ReaderScreen(
         ) {
             // In-page search bar
             if (showInPageSearch) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(cardBg)
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                Surface(
+                    color = cardBg,
+                    tonalElevation = 4.dp,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    OutlinedTextField(
-                        value = inPageQuery,
-                        onValueChange = { inPageQuery = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("ابحث عن كلمة في صفحات هذا الكتاب...", fontSize = 11.sp) },
-                        singleLine = true,
-                        trailingIcon = {
-                            if (inPageQuery.isNotBlank()) {
-                                val match = book.pages.indexOfFirst {
-                                    it.content.contains(inPageQuery, ignoreCase = true) || it.heading.contains(inPageQuery, ignoreCase = true)
-                                }
-                                if (match != -1) {
-                                    TextButton(onClick = { currentPageIndex = match }) {
-                                        Text("انتقل (ص ${match + 1})", fontSize = 11.sp, color = LibraryColors.TealGlow)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = inPageQuery,
+                                onValueChange = {
+                                    inPageQuery = it
+                                    currentMatchIndex = 0
+                                },
+                                modifier = Modifier.weight(1f),
+                                placeholder = {
+                                    Text(
+                                        "بحث عن كلمة أو عبارة في نصوص الكتاب...",
+                                        fontSize = 12.sp,
+                                        color = LibraryColors.TextMuted
+                                    )
+                                },
+                                singleLine = true,
+                                trailingIcon = {
+                                    if (inPageQuery.isNotBlank()) {
+                                        IconButton(onClick = { inPageQuery = "" }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Clear,
+                                                contentDescription = "مسح",
+                                                tint = LibraryColors.TextMuted,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = LibraryColors.SurfaceCard,
+                                    unfocusedContainerColor = LibraryColors.SurfaceCard,
+                                    focusedTextColor = textColor,
+                                    unfocusedTextColor = textColor
+                                )
+                            )
+
+                            IconButton(onClick = { showInPageSearch = false }) {
+                                Icon(Icons.Default.Clear, contentDescription = "إغلاق البحث", tint = textColor)
+                            }
+                        }
+
+                        if (inPageQuery.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (searchMatches.isEmpty()) "لا توجد نتائج مطابقة"
+                                    else "${searchMatches.size} موضع في الكتاب (ص ${searchMatches.getOrNull(currentMatchIndex)?.second?.pageLabel ?: ""})",
+                                    fontSize = 11.sp,
+                                    color = if (searchMatches.isEmpty()) LibraryColors.TextMuted else LibraryColors.TealGlow,
+                                    fontWeight = FontWeight.Medium
+                                )
+
+                                if (searchMatches.isNotEmpty()) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        IconButton(
+                                            onClick = {
+                                                if (searchMatches.isNotEmpty()) {
+                                                    currentMatchIndex = if (currentMatchIndex > 0) currentMatchIndex - 1 else searchMatches.size - 1
+                                                    currentPageIndex = searchMatches[currentMatchIndex].first
+                                                }
+                                            },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "السابق", tint = textColor, modifier = Modifier.size(20.dp))
+                                        }
+
+                                        Text(
+                                            text = "${currentMatchIndex + 1}/${searchMatches.size}",
+                                            fontSize = 11.sp,
+                                            color = LibraryColors.AmberAccent,
+                                            fontWeight = FontWeight.Bold
+                                        )
+
+                                        IconButton(
+                                            onClick = {
+                                                if (searchMatches.isNotEmpty()) {
+                                                    currentMatchIndex = (currentMatchIndex + 1) % searchMatches.size
+                                                    currentPageIndex = searchMatches[currentMatchIndex].first
+                                                }
+                                            },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "التالي", tint = textColor, modifier = Modifier.size(20.dp))
+                                        }
+
+                                        TextButton(
+                                            onClick = { showSearchResultsDrawer = true },
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text("عرض الكل", fontSize = 11.sp, color = LibraryColors.TealGlow)
+                                        }
                                     }
                                 }
                             }
                         }
-                    )
+                    }
                 }
             }
 
@@ -281,9 +433,9 @@ fun ReaderScreen(
                         )
                     }
 
-                    // Content
+                    // Content with keyword highlighting
                     Text(
-                        text = displayContent,
+                        text = highlightedContent,
                         color = textColor,
                         fontSize = preferences.fontSize.sp,
                         lineHeight = (preferences.fontSize * preferences.lineHeight).sp,
@@ -449,7 +601,7 @@ fun ReaderScreen(
                     trailingIcon = {
                         if (tocSearchQuery.isNotBlank()) {
                             IconButton(onClick = { tocSearchQuery = "" }) {
-                                Icon(Icons.Default.Close, contentDescription = "مسح", tint = LibraryColors.TextMuted, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.Clear, contentDescription = "مسح", tint = LibraryColors.TextMuted, modifier = Modifier.size(16.dp))
                             }
                         }
                     },
@@ -520,6 +672,67 @@ fun ReaderScreen(
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                     )
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Search Results Drawer
+    if (showSearchResultsDrawer && searchMatches.isNotEmpty()) {
+        ModalBottomSheet(onDismissRequest = { showSearchResultsDrawer = false }) {
+            Column(modifier = Modifier.padding(20.dp).fillMaxHeight(0.85f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("نتائج البحث في نصوص الكتاب", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = LibraryColors.TextWhite)
+                    Text("${searchMatches.size} موضع", fontSize = 12.sp, color = LibraryColors.AmberAccent, fontWeight = FontWeight.Bold)
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(searchMatches) { matchItem ->
+                        val (pageIdx, page, snippet) = matchItem
+                        val isCurrent = currentPageIndex == pageIdx
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isCurrent) LibraryColors.TealPrimary.copy(alpha = 0.2f) else LibraryColors.SurfaceCard,
+                            border = BorderStroke(1.dp, if (isCurrent) LibraryColors.TealGlow else LibraryColors.BorderSubtle),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    currentPageIndex = pageIdx
+                                    currentMatchIndex = searchMatches.indexOf(matchItem).coerceAtLeast(0)
+                                    showSearchResultsDrawer = false
+                                }
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = page.heading.ifBlank { "صفحة ${page.pageLabel}" },
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isCurrent) LibraryColors.TealGlow else LibraryColors.AmberAccent,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("ص ${page.pageLabel}", fontSize = 11.sp, color = LibraryColors.TextMuted)
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = snippet,
+                                    fontSize = 12.sp,
+                                    color = LibraryColors.TextWhite.copy(alpha = 0.85f),
+                                    lineHeight = 18.sp
+                                )
                             }
                         }
                     }
