@@ -2,5 +2,7 @@
   "name": "Ahlulbayt Offline Library",
   "description": "مكتبة أهل البيت (ع) - النسخة المحلية بدون اتصال، مع محرك تحليل متقدم لملفات contents_full.json و sahifa_5586.txt وفهرس الصفحات وقارئ المخطوطات والبحث الفوري.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
