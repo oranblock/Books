@@ -99,7 +99,7 @@ class SqlDelightStorage(driver: SqlDriver) {
                 publisherName = entity.publisherName,
                 printery = entity.printery,
                 printYear = entity.printYear?.toInt(),
-                abstract = entity.abstract,
+                abstractText = entity.abstractText,
                 isDownloaded = entity.isDownloaded == 1L || pages.isNotEmpty(),
                 pages = pages,
                 toc = toc
@@ -124,7 +124,7 @@ class SqlDelightStorage(driver: SqlDriver) {
                     publisherName = b.publisherName,
                     printery = b.printery,
                     printYear = b.printYear?.toLong(),
-                    abstract = b.abstract,
+                    abstractText = b.abstractText,
                     isDownloaded = if (b.isDownloaded || b.pages.isNotEmpty()) 1L else 0L
                 )
 
@@ -176,7 +176,7 @@ class SqlDelightStorage(driver: SqlDriver) {
                 publisherName = existing?.publisherName,
                 printery = existing?.printery,
                 printYear = existing?.printYear,
-                abstract = existing?.abstract,
+                abstractText = existing?.abstractText,
                 isDownloaded = 1L
             )
 
@@ -237,7 +237,7 @@ class SqlDelightStorage(driver: SqlDriver) {
             publisherName = entity.publisherName,
             printery = entity.printery,
             printYear = entity.printYear?.toInt(),
-            abstract = entity.abstract,
+            abstractText = entity.abstractText,
             isDownloaded = entity.isDownloaded == 1L || pages.isNotEmpty(),
             pages = pages,
             toc = toc

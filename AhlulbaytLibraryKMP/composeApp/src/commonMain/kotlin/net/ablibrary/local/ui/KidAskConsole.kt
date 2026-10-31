@@ -11,7 +11,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Sparkles
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -132,7 +131,7 @@ fun KidAskConsole(
         ) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Default.Sparkles, contentDescription = null, tint = LibraryColors.AmberAccent)
+                    Icon(Icons.Default.Star, contentDescription = null, tint = LibraryColors.AmberAccent)
                     Text(
                         text = "اسأل الإمام زين العابدين (ع)",
                         fontSize = 18.sp,

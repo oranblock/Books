@@ -42,12 +42,14 @@ data class Book(
     @SerialName("publisher_name") val publisherName: String? = null,
     val printery: String? = null,
     @SerialName("print_year") val printYear: Int? = null,
-    val abstract: String? = null,
+    @SerialName("abstract") val abstractText: String? = null,
     @SerialName("is_downloaded") val isDownloaded: Boolean = true,
     val pages: List<BookPage> = emptyList(),
     val toc: List<TocItem> = emptyList(),
     val contributors: List<Contributor> = emptyList()
-)
+) {
+    val abstract: String? get() = abstractText
+}
 
 @Serializable
 enum class ReaderTheme { DARK, SEPIA, BLACK, LIGHT }

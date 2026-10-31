@@ -12,7 +12,7 @@ CREATE TABLE BookEntity (
     publisherName TEXT,
     printery TEXT,
     printYear INTEGER,
-    abstract TEXT,
+    abstractText TEXT,
     isDownloaded INTEGER NOT NULL DEFAULT 1
 );
 
@@ -54,11 +54,11 @@ insertOrReplaceBook:
 INSERT OR REPLACE INTO BookEntity (
     id, title, volumeLabel, volumeNumber, pageCount,
     categoryName, categoryId, authorName, authorEra, deathDisplay,
-    publisherName, printery, printYear, abstract, isDownloaded
+    publisherName, printery, printYear, abstractText, isDownloaded
 ) VALUES (
     :id, :title, :volumeLabel, :volumeNumber, :pageCount,
     :categoryName, :categoryId, :authorName, :authorEra, :deathDisplay,
-    :publisherName, :printery, :printYear, :abstract, :isDownloaded
+    :publisherName, :printery, :printYear, :abstractText, :isDownloaded
 );
 
 deleteBook:
