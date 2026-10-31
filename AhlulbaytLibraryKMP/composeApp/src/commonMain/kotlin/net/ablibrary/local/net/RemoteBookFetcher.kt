@@ -68,7 +68,7 @@ object RemoteBookFetcher {
                             for (dUrl in downloadUrls) {
                                 val dlResp = NetworkClient.get(dUrl)
                                 if (dlResp.isSuccessful && dlResp.body.isNotBlank()) {
-                                    val parsed = TextParser.parseAnyTextOrJsonToPages(dlResp.body).pages
+                                    val parsed = TextParser.parseAnyContent(dlResp.body).first
                                     if (parsed.isNotEmpty()) {
                                         return Result.success(parsed)
                                     }

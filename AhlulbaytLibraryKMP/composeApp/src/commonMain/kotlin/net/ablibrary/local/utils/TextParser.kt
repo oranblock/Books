@@ -269,6 +269,11 @@ object TextParser {
     }
 
     /**
+     * Backward-compatible alias for parseAnyContent.first
+     */
+    fun parseAnyTextOrJsonToPages(rawText: String): List<BookPage> = parseAnyContent(rawText).first
+
+    /**
      * Generates Table of Contents from pages.
      */
     fun extractToc(pages: List<BookPage>): List<TocItem> {
