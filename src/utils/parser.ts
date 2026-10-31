@@ -4,50 +4,51 @@ import { Book, BookPage, TocItem } from '../types/library';
  * Recursively extracts text and headings from an abx.pages JSON tree structure.
  * Matches the logic from the Python BookService/Details protobuf tree walk.
  */
-export function walkAbxNode(node: any, outLines: string[], headings: string[]): void {
+export function walkAbxNode(node: any, outLines: string[], headings: string[], isParentHeading: boolean = false): void {
   if (!node) return;
 
   if (typeof node === 'object' && !Array.isArray(node)) {
-    const isHeading = 'heading' in node && node.heading !== null && node.heading !== undefined;
+    const hasHeadingProp = 'heading' in node && node.heading !== null && node.heading !== undefined;
+    const isHeading = hasHeadingProp || isParentHeading;
     const t = node.text;
 
     if (t && typeof t === 'object' && typeof t.text === 'string') {
       const txtVal = t.text.trim();
       if (txtVal) {
-        if (isHeading && headings.length === 0) {
+        if (isHeading) {
           headings.push(txtVal);
         } else {
           outLines.push(t.text);
         }
       }
     } else if (typeof t === 'string' && t.trim()) {
-      outLines.push(t);
+      if (isHeading) {
+        headings.push(t.trim());
+      } else {
+        outLines.push(t);
+      }
     }
 
     // If heading is a sub-object containing children/text
-    if (isHeading && typeof node.heading === 'object') {
-      const hLines: string[] = [];
-      walkAbxNode(node.heading, hLines, headings);
-      if (hLines.length > 0 && headings.length === 0) {
-        headings.push(hLines.map((x) => x.trim()).filter(Boolean).join(' '));
-      }
+    if (typeof node.heading === 'object' && node.heading !== null) {
+      walkAbxNode(node.heading, outLines, headings, true);
     }
 
     if (Array.isArray(node.children)) {
       for (const ch of node.children) {
-        walkAbxNode(ch, outLines, headings);
+        walkAbxNode(ch, outLines, headings, isHeading);
       }
     }
     if (Array.isArray(node.contents)) {
       for (const ch of node.contents) {
         if (ch !== node) {
-          walkAbxNode(ch, outLines, headings);
+          walkAbxNode(ch, outLines, headings, false);
         }
       }
     }
   } else if (Array.isArray(node)) {
     for (const item of node) {
-      walkAbxNode(item, outLines, headings);
+      walkAbxNode(item, outLines, headings, isParentHeading);
     }
   }
 }
@@ -98,7 +99,23 @@ export function parseJsonContentsToPages(data: any): BookPage[] {
       }
     }
 
-    let headingStr = headings.length > 0 ? headings[0].trim() : '';
+    let headingStr = headings.length > 0 ? headings.join(' - ').trim() : '';
+    if (!headingStr && deduped.length > 0) {
+      for (const line of deduped.slice(0, 3)) {
+        const tr = line.trim();
+        if (
+          tr.length >= 3 && tr.length <= 150 &&
+          (tr.startsWith('#') || tr.startsWith('باب ') || tr.startsWith('فصل ') ||
+           tr.startsWith('المقدمة') || tr.startsWith('الخاتمة') ||
+           tr.includes('وكان من دعائه') || tr.includes('دعاؤه في') ||
+           (tr.startsWith('*') && tr.endsWith('*')) ||
+           (tr.includes('باب') && (tr.startsWith('(') || tr.startsWith('*'))))
+        ) {
+          headingStr = tr.replace(/^#\s*/, '').replace(/^[*—\-()\s:؛]+|[*—\-()\s:؛]+$/g, '').trim();
+          break;
+        }
+      }
+    }
     if (headingStr && deduped.length > 0 && deduped[0].trim() === headingStr) {
       deduped.shift();
     }
@@ -280,13 +297,16 @@ export function parseAnyTextOrJsonToPages(rawText: string): { pages: BookPage[];
  */
 export function extractTocFromPages(pages: BookPage[]): TocItem[] {
   const toc: TocItem[] = [];
+  let lastHeading = '';
   for (const p of pages) {
-    if (p.heading && p.heading.trim()) {
+    const h = (p.heading || '').trim();
+    if (h && h !== lastHeading) {
       toc.push({
-        title: p.heading.trim(),
+        title: h,
         page_number: p.page_number,
-        page_label: p.page_label,
+        page_label: p.page_label || String(p.page_number),
       });
+      lastHeading = h;
     }
   }
   return toc;

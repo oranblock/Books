@@ -89,6 +89,8 @@ fun BookDetailsDialog(
                                 DetailRow("التصنيف:", book.categoryName ?: "عام")
                                 book.volumeLabel?.let { DetailRow("رقم الجزء:", "جزء $it") }
                                 DetailRow("الصفحات:", "${book.pages.size.takeIf { it > 0 } ?: book.pageCount ?: 0} صفحة")
+                                val tocCount = book.toc.size.takeIf { it > 0 } ?: book.pages.count { it.heading.isNotBlank() }
+                                DetailRow("فهرس الموضوعات:", if (tocCount > 0) "$tocCount باب وموضوع مفهرس" else "فهرسة صفحات")
                                 book.publisherName?.let { DetailRow("الناشر:", it) }
                                 book.printYear?.let { DetailRow("سنة الطبع:", "$it هـ") }
                                 DetailRow("حالة التوفر:", if (book.isDownloaded) "محمّل بالكامل محلياً (100% دون اتصال)" else "فهرس تعريفي")

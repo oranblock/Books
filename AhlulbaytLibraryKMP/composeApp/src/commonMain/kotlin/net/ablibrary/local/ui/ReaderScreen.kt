@@ -411,32 +411,115 @@ fun ReaderScreen(
         }
     }
 
+    var tocSearchQuery by remember { mutableStateOf("") }
+
     // TOC Sheet
     if (showTocDrawer) {
+        val fullToc = remember(book) {
+            if (book.toc.isNotEmpty()) book.toc else TextParser.extractToc(book.pages)
+        }
+        val filteredToc = remember(fullToc, tocSearchQuery) {
+            if (tocSearchQuery.isBlank()) fullToc
+            else {
+                val qNorm = TextParser.normalizeForSearch(tocSearchQuery)
+                fullToc.filter { TextParser.normalizeForSearch(it.title).contains(qNorm) }
+            }
+        }
+
         ModalBottomSheet(onDismissRequest = { showTocDrawer = false }) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text("فهرس أبواب وموضوعات الكتاب", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Column(modifier = Modifier.padding(20.dp).fillMaxHeight(0.85f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("فهرس أبواب وموضوعات الكتاب", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = LibraryColors.TextWhite)
+                    Text("${fullToc.size} عنوان وموضوع", fontSize = 12.sp, color = LibraryColors.AmberAccent, fontWeight = FontWeight.Bold)
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Search inside index
+                OutlinedTextField(
+                    value = tocSearchQuery,
+                    onValueChange = { tocSearchQuery = it },
+                    placeholder = { Text("بحث في عناوين الفهرس...", fontSize = 12.sp, color = LibraryColors.TextMuted) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    trailingIcon = {
+                        if (tocSearchQuery.isNotBlank()) {
+                            IconButton(onClick = { tocSearchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "مسح", tint = LibraryColors.TextMuted, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = LibraryColors.SurfaceCard,
+                        unfocusedContainerColor = LibraryColors.SurfaceCard,
+                        focusedTextColor = LibraryColors.TextWhite,
+                        unfocusedTextColor = LibraryColors.TextWhite
+                    )
+                )
+
                 Spacer(modifier = Modifier.height(12.dp))
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    val toc = book.pages.filter { it.heading.isNotBlank() }
-                    if (toc.isEmpty()) {
-                        item { Text("لا توجد عناوين مفهرسة لهذا الكتاب.", color = Color.Gray, fontSize = 12.sp) }
+
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (filteredToc.isEmpty()) {
+                        item {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    if (tocSearchQuery.isNotBlank()) "لا توجد نتائج مطابقة لبحثك في الفهرس."
+                                    else "لا توجد عناوين مفهرسة مسجلة لهذا الكتاب.",
+                                    color = LibraryColors.TextMuted,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
                     } else {
-                        items(toc) { item ->
+                        items(filteredToc) { item ->
+                            val isCurrent = currentPageIndex + 1 == item.pageNumber
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        if (isCurrent) LibraryColors.TealPrimary.copy(alpha = 0.2f)
+                                        else LibraryColors.SurfaceCard.copy(alpha = 0.6f)
+                                    )
                                     .clickable {
                                         currentPageIndex = (item.pageNumber.coerceIn(1, totalPages)) - 1
                                         showTocDrawer = false
                                     }
-                                    .padding(vertical = 8.dp, horizontal = 10.dp),
+                                    .padding(vertical = 10.dp, horizontal = 12.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(item.heading, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                                Text("ص ${item.pageLabel.ifBlank { item.pageNumber.toString() }}", color = LibraryColors.AmberAccent, fontSize = 12.sp)
+                                Text(
+                                    text = item.title,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isCurrent) LibraryColors.TealGlow else LibraryColors.TextWhite,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (isCurrent) LibraryColors.TealPrimary else LibraryColors.SurfaceDark
+                                ) {
+                                    Text(
+                                        text = "ص ${item.pageLabel.ifBlank { item.pageNumber.toString() }}",
+                                        color = if (isCurrent) Color.White else LibraryColors.AmberAccent,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
                             }
                         }
                     }

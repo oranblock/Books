@@ -116,8 +116,9 @@ fun BookCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val count = book.pages.size.takeIf { it > 0 } ?: book.pageCount ?: 0
+                val tocCount = book.toc.size.takeIf { it > 0 } ?: book.pages.count { it.heading.isNotBlank() }
                 Text(
-                    text = "$count صفحة مفهرسة",
+                    text = if (tocCount > 0) "$count صفحة · $tocCount باب مفهرس" else "$count صفحة",
                     color = LibraryColors.TextMuted,
                     fontSize = 11.sp
                 )

@@ -92,10 +92,18 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
     });
   }, [pages, searchQuery]);
 
-  // Table of Contents from headings
+  // Table of Contents from book.toc or page headings
   const tocItems = useMemo(() => {
+    if (book.toc && book.toc.length > 0) {
+      return book.toc.map((t) => ({
+        page_number: t.page_number,
+        page_label: t.page_label,
+        heading: t.title,
+        content: '',
+      }));
+    }
     return pages.filter((p) => Boolean(p.heading && p.heading.trim()));
-  }, [pages]);
+  }, [book.toc, pages]);
 
   // Jump to specific page
   const jumpToPage = (pageNum: number) => {

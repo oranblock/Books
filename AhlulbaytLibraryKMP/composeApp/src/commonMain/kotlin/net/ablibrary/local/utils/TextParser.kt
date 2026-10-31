@@ -82,18 +82,48 @@ object TextParser {
     }
 
     /**
+     * Checks if a line is a probable chapter, section, or prayer heading.
+     */
+    fun isProbableHeading(line: String): Boolean {
+        val t = line.trim()
+        if (t.length !in 3..150) return false
+        if (t.startsWith("#")) return true
+        val norm = normalizeForSearch(t)
+        return norm.startsWith("باب ") || norm.startsWith("فصل ") ||
+                norm.startsWith("المقدمة") || norm.startsWith("الخاتمة") ||
+                norm.startsWith("خطبة ") || norm.startsWith("رسالة ") ||
+                norm.startsWith("دعاء ") || norm.contains("وكان من دعائه") ||
+                norm.contains("دعاؤه في") || norm.contains("دعاؤه اذا") ||
+                (t.startsWith("*") && t.endsWith("*")) ||
+                (t.contains("باب") && (t.startsWith("(") || t.startsWith("*")))
+    }
+
+    fun cleanHeadingText(line: String): String {
+        return line.trim()
+            .removePrefix("#").trim()
+            .trim('*', '—', '-', ' ', ':', '؛')
+            .trim()
+    }
+
+    /**
      * Recursively extracts headings and text from an abx.pages JSON element.
      */
-    fun walkAbxNode(element: JsonElement, outLines: MutableList<String>, headings: MutableList<String>) {
+    fun walkAbxNode(
+        element: JsonElement,
+        outLines: MutableList<String>,
+        headings: MutableList<String>,
+        isParentHeading: Boolean = false
+    ) {
         when (element) {
             is JsonObject -> {
-                val hasHeading = element.containsKey("heading") && element["heading"] !is JsonNull
+                val hasHeadingProp = element.containsKey("heading") && element["heading"] !is JsonNull
+                val isHeading = hasHeadingProp || isParentHeading
                 val textEl = element["text"]
 
                 if (textEl is JsonObject) {
                     val txt = textEl["text"]?.jsonPrimitive?.contentOrNull?.trim()
                     if (!txt.isNullOrBlank()) {
-                        if (hasHeading && headings.isEmpty()) {
+                        if (isHeading) {
                             headings.add(txt)
                         } else {
                             outLines.add(txt)
@@ -101,25 +131,29 @@ object TextParser {
                     }
                 } else if (textEl is JsonPrimitive) {
                     val txt = textEl.contentOrNull?.trim()
-                    if (!txt.isNullOrBlank()) outLines.add(txt)
-                }
-
-                if (hasHeading) {
-                    val headingEl = element["heading"]
-                    if (headingEl is JsonObject) {
-                        val hLines = mutableListOf<String>()
-                        walkAbxNode(headingEl, hLines, headings)
-                        if (hLines.isNotEmpty() && headings.isEmpty()) {
-                            headings.add(hLines.joinToString(" ").trim())
+                    if (!txt.isNullOrBlank()) {
+                        if (isHeading) {
+                            headings.add(txt)
+                        } else {
+                            outLines.add(txt)
                         }
                     }
                 }
 
-                element["children"]?.jsonArray?.forEach { walkAbxNode(it, outLines, headings) }
-                element["contents"]?.jsonArray?.forEach { if (it != element) walkAbxNode(it, outLines, headings) }
+                val headingEl = element["heading"]
+                if (headingEl is JsonObject) {
+                    walkAbxNode(headingEl, outLines, headings, isParentHeading = true)
+                }
+
+                element["children"]?.jsonArray?.forEach {
+                    walkAbxNode(it, outLines, headings, isParentHeading = isHeading)
+                }
+                element["contents"]?.jsonArray?.forEach {
+                    if (it != element) walkAbxNode(it, outLines, headings, isParentHeading = false)
+                }
             }
             is JsonArray -> {
-                element.forEach { walkAbxNode(it, outLines, headings) }
+                element.forEach { walkAbxNode(it, outLines, headings, isParentHeading = isParentHeading) }
             }
             else -> {}
         }
@@ -166,7 +200,18 @@ object TextParser {
             }
 
             if (heading.isBlank() && headings.isNotEmpty()) {
-                heading = headings.first()
+                heading = headings.joinToString(" - ").trim()
+            }
+
+            // Smart fallback if heading is still blank: inspect first lines
+            if (heading.isBlank() && outLines.isNotEmpty()) {
+                for (line in outLines.take(3)) {
+                    val trimmedLine = line.trim()
+                    if (isProbableHeading(trimmedLine)) {
+                        heading = cleanHeadingText(trimmedLine)
+                        break
+                    }
+                }
             }
 
             result.add(
@@ -274,16 +319,25 @@ object TextParser {
     fun parseAnyTextOrJsonToPages(rawText: String): List<BookPage> = parseAnyContent(rawText).first
 
     /**
-     * Generates Table of Contents from pages.
+     * Generates Table of Contents from pages with consecutive deduplication.
      */
     fun extractToc(pages: List<BookPage>): List<TocItem> {
-        return pages.filter { it.heading.isNotBlank() }.map {
-            TocItem(
-                title = it.heading.trim(),
-                pageNumber = it.pageNumber,
-                pageLabel = it.pageLabel
-            )
+        val result = mutableListOf<TocItem>()
+        var lastHeading = ""
+        for (p in pages) {
+            val h = p.heading.trim()
+            if (h.isNotBlank() && h != lastHeading) {
+                result.add(
+                    TocItem(
+                        title = h,
+                        pageNumber = p.pageNumber,
+                        pageLabel = p.pageLabel.ifBlank { p.pageNumber.toString() }
+                    )
+                )
+                lastHeading = h
+            }
         }
+        return result
     }
 
     /**
